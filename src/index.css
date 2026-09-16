@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .fc-grid-overlay {
+    background-image:
+      linear-gradient(rgba(120, 132, 160, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(120, 132, 160, 0.06) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+  .scrollbar-none { scrollbar-width: none; }
+  .crumb-mask {
+    mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  }
+}
+
+html, body, #root { height: 100%; }
