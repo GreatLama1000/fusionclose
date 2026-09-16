@@ -14,11 +14,15 @@ import CurrencyTranslation from './screens/CurrencyTranslation';
 import Intercompany from './screens/Intercompany';
 import ConsolidationCycle from './screens/ConsolidationCycle';
 import ReportingHub from './screens/ReportingHub';
+import Workspace from './screens/Workspace';
+import ManageTeams from './screens/ManageTeams';
 import { useApp } from './state/AppContext';
 import { RouteKey } from './routes';
 
 const SCREENS: Partial<Record<RouteKey, React.ComponentType>> = {
   home: Home,
+  workspace: Workspace,
+  access: ManageTeams,
   command: CommandCenter,
   engagement: EngagementSetup,
   entities: LegalEntityMaster,
