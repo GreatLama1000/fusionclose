@@ -64,17 +64,6 @@ export default function TopBar() {
 
         <div className="flex-1" />
 
-        {/* + New Project */}
-        <button
-          onClick={() => navTo('intake')}
-          className="h-9 px-3.5 rounded-xl text-[12.5px] font-bold text-white flex items-center gap-1.5 shadow-primary"
-          style={{ background: 'linear-gradient(145deg,#3B82F6,#2563EB)' }}
-          title="Start a new engagement"
-        >
-          <Icon path="M12 5v14M5 12h14" size={13} strokeWidth={2.6} />
-          New Project
-        </button>
-
         {/* Bell */}
         <div className="relative">
           <button

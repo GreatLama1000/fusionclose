@@ -69,7 +69,18 @@ export default function Workspace() {
 
   return (
     <div className="p-8 space-y-5 animate-fcFade">
-      <h1 className="text-2xl font-bold text-ink-900">My Workspace</h1>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <h1 className="text-2xl font-bold text-ink-900">My Workspace</h1>
+        <button
+          onClick={() => navTo('intake')}
+          className="h-9 px-3.5 rounded-xl text-[12.5px] font-bold text-white flex items-center gap-1.5 shadow-primary"
+          style={{ background: 'linear-gradient(145deg,#3B82F6,#2563EB)' }}
+          title="Start a new engagement"
+        >
+          <Icon path="M12 5v14M5 12h14" size={13} strokeWidth={2.6} />
+          New Project
+        </button>
+      </div>
 
       {/* On My Radar */}
       <section className="p-5 rounded-2xl bg-surface-card shadow-neu">
