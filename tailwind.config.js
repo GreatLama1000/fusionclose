@@ -6,6 +6,23 @@ export default {
       fontFamily: {
         serif: ['Cambria', 'Georgia', '"Times New Roman"', 'serif'],
       },
+      /*
+       * Type scale derived from the design's own vocabulary rather than
+       * Tailwind's defaults. Measured frequencies in Fusion Close.dc.html:
+       *   11px ×252 · 11.5px ×189 · 10.5px ×184 · 12px ×179 · 12.5px ×124 · 13px ×74
+       * Tailwind's stock 14px/12px body sizes sit a full notch above all of it.
+       * 2xl stays at 24px — the design's screen <h1>s are 24px (22 of them),
+       * so headings were already correct and are left alone.
+       */
+      fontSize: {
+        xs:     ['10.5px', '1.45'],
+        sm:     ['12.5px', '1.45'],
+        base:   ['13px',   '1.5'],
+        lg:     ['15px',   '1.4'],
+        xl:     ['17px',   '1.35'],
+        '2xl':  ['24px',   '1.25'],
+        '3xl':  ['32px',   '1.2'],
+      },
       colors: {
         ink: {
           900: '#232C42',

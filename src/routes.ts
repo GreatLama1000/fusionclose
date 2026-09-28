@@ -2,9 +2,10 @@ export type RouteKey =
   | 'home' | 'workspace' | 'command' | 'intake' | 'engagement' | 'entities' | 'access'
   | 'upload' | 'tb' | 'atb' | 'fslimap' | 'fx' | 'ice' | 'gaap'
   | 'consol' | 'reporting' | 'fs' | 'bridges' | 'disclosure' | 'library' | 'disclib'
-  | 'notes' | 'wnote' | 'org' | 'team' | 'reach' | 'help' | 'settings'
+  | 'notes' | 'wnote' | 'org' | 'reach' | 'help' | 'settings'
   | 'proforma' | 'carve' | 'buscomb'
-  | 'mytasks' | 'userguide' | 'feedback';
+  | 'mytasks' | 'userguide' | 'feedback'
+  | 'pmo' | 'repanalytics';
 
 type RouteMeta = { label: string; glyph: string; section: string };
 
@@ -44,6 +45,8 @@ export const routes: Record<RouteKey, RouteMeta> = {
   ice:        { label: 'Intercompany (ICE)',         glyph: 'M12 4 3 20h18L12 4zM12 10v5M12 17.5v.5', section: 'Workspace' },
   consol:     { label: 'Consolidation Cycle',        glyph: 'M20 12a8 8 0 1 1-2.3-5.7M20 3v6h-6', section: 'Workspace' },
   reporting:  { label: 'Reporting Hub',              glyph: 'M4 20h16M7 16v-6M12 16V6M17 16v-3', section: 'Output & Reporting' },
+  repanalytics: { label: 'Reporting & Analytics',    glyph: 'M6 3h9l4 4v14H6zM9 11h6M9 15h4M14 3v4h4', section: 'Output & Reporting' },
+  pmo:        { label: 'Manage Assignments',         glyph: 'M8 4h8v3H8zM8 4H5v17h14V4h-3M9 13l2 2 4-4', section: 'Delivery' },
   fs:         { label: 'Single-Entity FS',           glyph: 'M6 3h9l4 4v14H6zM15 3v4h4M9 12h6M9 16h6', section: 'Output & Reporting' },
   bridges:    { label: 'Bridge Reports',             glyph: 'M3 17h18M3 8h18M7 8v9M12 8v9M17 8v9', section: 'Output & Reporting' },
   disclosure: { label: 'Disclosure Sentinel',        glyph: 'M12 3l7 2.5v6c0 4.2-2.9 7.6-7 9.5-4.1-1.9-7-5.3-7-9.5v-6zM9 12l2.2 2.2L15.5 10', section: 'Reporting & Analytics' },
@@ -51,12 +54,16 @@ export const routes: Record<RouteKey, RouteMeta> = {
   notes:      { label: 'Notes & Disclosures',        glyph: 'M6 3h9l5 5v13H6z', section: 'Reporting & Analytics' },
   wnote:      { label: 'Working Note',               glyph: 'M4 4h16v16H4z', section: 'Reporting & Analytics' },
   org:        { label: 'Org Chart',                  glyph: 'M12 3v4M6 11v4M18 11v4M4 7h16', section: 'Engagement Setup' },
-  team:       { label: 'Team',                       glyph: 'M8 8a4 4 0 108 0 4 4 0 00-8 0zM2 20a6 6 0 0120 0', section: 'Teams' },
   help:       { label: 'Help',                       glyph: 'M12 18h.01M9 9a3 3 0 116 0c0 2-3 2-3 5', section: 'Bottom' },
   settings:   { label: 'Settings',                   glyph: 'M4 8h9M17 8h3M13 5v6M4 16h3M11 16h9M7 13v6', section: 'Bottom' },
 };
 
-export const sectionOrder = ['Top', 'Teams', 'Module Integration', 'Disclosure insights', 'Bottom'] as const;
+/**
+ * Sidebar sections. "Module Integration" is deliberately absent — modules are
+ * switched on from their cards in the Command Center, so the rail stays short
+ * enough to never need a scrollbar.
+ */
+export const sectionOrder = ['Top', 'Teams', 'Disclosure insights', 'Bottom'] as const;
 
 export const parentSections: string[] = ['Top', 'Teams', 'Disclosure insights', 'Bottom'];
 
@@ -72,16 +79,21 @@ export const stepperRoutes: RouteKey[] = ['consol', 'gaap', 'reporting', 'fs', '
 
 export const navHide: RouteKey[] = [];
 
-export type StepStatus = 'done' | 'active' | 'todo' | 'warn';
-export type StepDef = { key: string; label: string; status: StepStatus };
+/**
+ * Close-progress stepper — `stepDefs`, design lines 10010–10013.
+ * "active" is not a status: the current route gets a blue ring layered over
+ * whichever status colour it already carries.
+ */
+export type StepStatus = 'done' | 'todo' | 'warn';
+export type StepDef = { key: RouteKey; icon: string; label: string; status: StepStatus };
 
 export const stepperDefs: StepDef[] = [
-  { key: 'tb',      label: 'Trial Balance',      status: 'done' },
-  { key: 'map',     label: 'FSLI Mapping',       status: 'done' },
-  { key: 'atb',     label: 'Adjustments',        status: 'active' },
-  { key: 'fx',      label: 'FX Translation',     status: 'todo' },
-  { key: 'ic',      label: 'Intercompany',       status: 'warn' },
-  { key: 'gaap',    label: 'GAAP',               status: 'todo' },
-  { key: 'consol',  label: 'Consolidation',      status: 'todo' },
-  { key: 'report',  label: 'Reporting',          status: 'todo' },
+  { key: 'engagement', icon: 'M9 4h6v3H9zM9 4H6v17h12V4h-3M9 12h6M9 16h4', label: 'Engagement Setup',    status: 'done' },
+  { key: 'fx',         icon: 'M4 7h14l-3.5-3.5M20 17H6l3.5 3.5',           label: 'Currency Translation', status: 'done' },
+  { key: 'ice',        icon: 'M12 4 3 20h18L12 4zM12 10v5M12 17.5v.5',     label: 'IC Eliminations',     status: 'warn' },
+  { key: 'gaap',       icon: 'M8 3 4 7l4 4M4 7h16M16 13l4 4-4 4M20 17H4',  label: 'GAAP Conversion',     status: 'todo' },
+  { key: 'reporting',  icon: 'M4 20h16M7 16v-6M12 16V6M17 16v-3',          label: 'Output',              status: 'todo' },
 ];
+
+/** Done steps swap their own glyph for a tick (design line 10023). */
+export const STEP_DONE_ICON = 'M4 12.5l5 5L20 7';

@@ -9,11 +9,164 @@
       linear-gradient(90deg, rgba(120, 132, 160, 0.06) 1px, transparent 1px);
     background-size: 32px 32px;
   }
+  /* Verbatim from the design: .fc-h lift-on-hover */
+  .fc-h {
+    transition: border-color .18s, background .18s, transform .18s, box-shadow .18s;
+  }
+  .fc-h:hover { transform: translateY(-1px); }
+
+  /*
+   * Notes & Disclosures item tools — design CSS lines 30–31. The per-item
+   * toolbar stays out of the way until the item is hovered, is the active
+   * editor (`data-nd-active="1"`), or holds focus.
+   */
+  .fc-tools { opacity: 0; pointer-events: none; transition: opacity .14s ease; }
+  [data-nd-hover]:hover .fc-tools,
+  [data-nd-active="1"] .fc-tools,
+  .fc-tools:focus-within { opacity: 1; pointer-events: auto; }
+
+  /* list formats offered by the formatting toolbar — design CSS lines 37–44 */
+  [data-note-edit] ul, [data-note-edit] ol { padding-left: 24px; margin: 5px 0; }
+  [data-note-edit] li { margin: 2px 0; }
+  [data-note-edit] ol[data-fc="multi"],
+  [data-note-edit] ol[data-fc="multi"] ol { list-style: none; counter-reset: fcm; padding-left: 26px; }
+  [data-note-edit] ol[data-fc="multi"] li { counter-increment: fcm; }
+  [data-note-edit] ol[data-fc="multi"] li::before { content: counters(fcm, '.') '\00a0\00a0'; font-weight: 700; }
+
+  /*
+   * Button reset. The design writes `all:unset` inline on every button; that
+   * shorthand is unreliable through React's style diffing, and when it fails
+   * the UA's default button chrome (a dark bevelled border) shows through.
+   * An explicit class is deterministic, and inline borders still win over it.
+   */
+  .fc-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    background: none;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    text-align: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    box-sizing: border-box;
+  }
+  .fc-btn:focus { outline: none; }
+  .fc-btn:focus-visible {
+    outline: 2px solid rgba(59, 130, 246, .55);
+    outline-offset: 2px;
+  }
   .scrollbar-none::-webkit-scrollbar { display: none; }
   .scrollbar-none { scrollbar-width: none; }
+  /* Design's breadcrumb rail: masked on the LEFT edge only, 18px. */
   .crumb-mask {
-    mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 18px, #000 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 18px, #000 100%);
   }
 }
 
+/* numbered-list formats the toolbar offers — design CSS lines 36–37 */
+@counter-style fcParen { system: extends decimal; suffix: ') '; }
+@counter-style fcDash { system: cyclic; symbols: '\2013'; suffix: '  '; }
+
+/*
+ * Keyframes copied verbatim from the design's <helmet> style block.
+ * These must live here, not only in tailwind.config.js: Tailwind emits
+ * @keyframes only when the matching `animate-*` utility appears in the
+ * content scan, so inline `animation:` values would resolve to nothing.
+ */
+/*
+ * Dark theme — Tailwind half.
+ *
+ * Inline styles are remapped at runtime by src/theme/dark.ts, a direct port of
+ * the design's dkOne/dkStyle. The values below are the SAME transform applied
+ * ahead of time to the Tailwind palette, so screens still using utility classes
+ * land on identical colours. Regenerate rather than hand-edit if the palette
+ * in tailwind.config.js changes.
+ */
+.fc-dark { background: rgb(25,31,43); color-scheme: dark; }
+.fc-dark ::selection { background: rgba(59,130,246,.42); }
+.fc-dark input, .fc-dark select, .fc-dark textarea { color-scheme: dark; }
+
+.fc-dark .text-ink-900 { color: rgb(180,189,211); }
+.fc-dark .text-ink-800 { color: rgb(161,172,199); }
+.fc-dark .text-ink-700 { color: rgb(150,161,186); }
+.fc-dark .text-ink-600 { color: rgb(134,143,163); }
+.fc-dark .text-ink-500 { color: rgb(114,125,153); }
+.fc-dark .text-ink-400 { color: rgb(96,106,135); }
+.fc-dark .text-ink-300 { color: rgb(73,83,107); }
+.fc-dark .text-ink-200 { color: rgb(39,47,65); }
+.fc-dark .text-good { color: rgb(89,228,141); }
+.fc-dark .text-warn { color: rgb(246,146,70); }
+.fc-dark .text-danger { color: rgb(240,113,113); }
+.fc-dark .text-brand-accent { color: rgb(124,148,240); }
+.fc-dark .text-brand-500 { color: rgb(96,140,244); }
+.fc-dark .text-white { color: #EEF2FA; }
+
+.fc-dark .bg-surface-bg { background-color: rgb(25,31,43); }
+.fc-dark .bg-surface-card { background-color: rgb(20,25,35); }
+.fc-dark .bg-surface-card2 { background-color: rgb(16,18,26); }
+.fc-dark .bg-surface-soft { background-color: rgb(23,28,40); }
+.fc-dark .bg-surface-line { background-color: rgb(31,38,53); }
+.fc-dark .bg-white, .fc-dark .bg-white\/40, .fc-dark .bg-white\/50,
+.fc-dark .bg-white\/60, .fc-dark .bg-white\/70, .fc-dark .bg-white\/85 {
+  background-color: rgb(20,25,35);
+}
+.fc-dark .bg-ink-900 { background-color: rgb(32,38,51); }
+
+.fc-dark .border-surface-line, .fc-dark .border-surface-line\/60,
+.fc-dark .border-surface-line\/70, .fc-dark .border-surface-line\/40 {
+  border-color: rgb(46,55,74);
+}
+.fc-dark .border-ink-200 { border-color: rgb(52,62,84); }
+
+/* neumorphic shadows need dark-side highlights or the relief disappears */
+.fc-dark .shadow-neu {
+  box-shadow: 9px 9px 22px rgba(0,0,0,.55), -9px -9px 22px rgba(255,255,255,.04);
+}
+.fc-dark .shadow-neu-sm {
+  box-shadow: 6px 6px 14px rgba(0,0,0,.5), -6px -6px 14px rgba(255,255,255,.035);
+}
+.fc-dark .shadow-neu-in {
+  box-shadow: inset 3px 3px 7px rgba(0,0,0,.55), inset -3px -3px 7px rgba(255,255,255,.04);
+}
+.fc-dark .shadow-neu-in-sm {
+  box-shadow: inset 2px 2px 5px rgba(0,0,0,.5), inset -2px -2px 5px rgba(255,255,255,.035);
+}
+
+.fc-dark .fc-grid-overlay {
+  background-image:
+    linear-gradient(rgba(150, 165, 200, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(150, 165, 200, 0.05) 1px, transparent 1px);
+}
+
+@keyframes fcFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+@keyframes fcFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fcPop { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes fcPulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.78); } }
+@keyframes fcSweep { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
+
 html, body, #root { height: 100%; }
+
+/*
+ * A figure linked into a narrative (Shift + L). Kept outside the utilities
+ * layer: the chip is created from script, so nothing guarantees the class
+ * survives content scanning. `--fig` carries the source colour.
+ */
+.fc-fig {
+  display: inline-block;
+  padding: 0 5px;
+  margin: 0 1px;
+  border-radius: 5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--fig, #2563EB);
+  background: color-mix(in srgb, var(--fig, #2563EB) 11%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fig, #2563EB) 32%, transparent);
+  line-height: 1.35;
+  cursor: default;
+  user-select: all;
+}
+.fc-fig[data-fig-broken] { color: #B42318; background: rgba(180, 35, 24, .08); border-color: rgba(180, 35, 24, .3); }
