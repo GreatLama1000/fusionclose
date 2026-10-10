@@ -1,4 +1,8 @@
 import React, { useMemo, useState } from 'react';
+import { useApp } from '../state/AppContext';
+import { useTbUploads, TbUploads, TbUploadModal, TbStatusButton, TbSettingsPanel } from '../components/TbUpload';
+import { JournalEntriesTab, useJournal } from './journal/JournalEntries';
+import { Clip, GridCol, GridHead, useGrid } from '../components/grid/Grid';
 
 /**
  * Financial Data Layer — ported from docs/design/Fusion Close.dc.html,
@@ -59,34 +63,6 @@ const PRIMARY_BTN: React.CSSProperties = {
   color: '#fff',
 };
 
-const TH: React.CSSProperties = {
-  padding: '7px 10px',
-  textAlign: 'left',
-  verticalAlign: 'top',
-  color: '#1B3A5C',
-  borderBottom: '1px solid #CBD2E0',
-  borderTop: '2px solid #1B3A5C',
-  fontSize: '9px',
-  letterSpacing: '.4px',
-  textTransform: 'uppercase',
-  fontWeight: 700,
-  background: '#E4E8F0',
-  position: 'sticky',
-  top: 0,
-  zIndex: 5,
-  whiteSpace: 'normal',
-  lineHeight: 1.25,
-};
-
-const TD: React.CSSProperties = {
-  padding: '5px 10px',
-  whiteSpace: 'nowrap',
-  borderBottom: '1px solid #E7EAF2',
-  fontSize: '10.5px',
-  color: '#65708C',
-};
-
-const fieldKey = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 
 /* =========================== trial balance =========================== */
 
@@ -123,13 +99,21 @@ const fmtNet = (n: number) =>
 
 type Gran = 'monthly' | 'quarterly' | 'annually' | 'custom';
 
+/** one trial-balance account, its value per period bucket and its total */
+type TbRow = { key: string; head: [string, string, string, string]; vals: number[]; rowTot: number };
+
 function TrialBalanceTab({
   onOpenFsli,
   unmapped,
+  up,
 }: {
   onOpenFsli: () => void;
   unmapped: number;
+  /** the TB upload queue — held by the screen so uploads outlive this tab */
+  up: TbUploads;
 }) {
+  const [upOpen, setUpOpen] = useState(false);
+  const [setOpen, setSetOpen] = useState(false);
   const [gran, setGran] = useState<Gran>('monthly');
   const [custOpen, setCustOpen] = useState(false);
   const [custFrom, setCustFrom] = useState(0);
@@ -160,7 +144,7 @@ function TrialBalanceTab({
   const showTotal = buckets.length > 1;
   const bucketTotals = buckets.map(() => 0);
   let grand = 0;
-  const rows = TB_ACCOUNTS.map((a, ai) => {
+  const rows: TbRow[] = TB_ACCOUNTS.map((a, ai) => {
     const vals = buckets.map((b, bi) => {
       const v = b.months.reduce((s, mi) => s + monthNet(ai, mi), 0);
       bucketTotals[bi] += v;
@@ -168,18 +152,29 @@ function TrialBalanceTab({
     });
     const rowTot = vals.reduce((x, y) => x + y, 0);
     grand += rowTot;
-    return { head: [a[0], a[1], a[2], a[3]], vals, rowTot };
+    return { key: `${a[0]}|${a[1]}|${ai}`, head: [a[0], a[1], a[2], a[3]], vals, rowTot };
   });
   const balanced = bucketTotals.every((t) => t === 0);
 
-  const cols = [
-    { label: 'Legal Entity Code', align: 'left' as const },
-    { label: 'Local Chart of Accounts (LCOA)', align: 'left' as const },
-    { label: 'Local Account Description', align: 'left' as const },
-    { label: 'Business Unit (BU)', align: 'left' as const },
-    ...buckets.map((b) => ({ label: b.label, align: 'right' as const })),
-    ...(showTotal ? [{ label: 'Total', align: 'right' as const }] : []),
-  ];
+  /* stable keys — the period buckets change with the granularity */
+  const gridCols = useMemo<GridCol[]>(() => [
+    { key: 'le', label: 'Legal Entity Code', w: 130 },
+    { key: 'lcoa', label: 'Local Chart of Accounts (LCOA)', w: 150 },
+    { key: 'desc', label: 'Local Account Description', w: 240 },
+    { key: 'bu', label: 'Business Unit (BU)', w: 150 },
+    ...buckets.map((b) => ({ key: `b:${b.label}`, label: b.label, w: 130, align: 'right' as const, num: true })),
+    ...(showTotal ? [{ key: 'total', label: 'Total', w: 140, align: 'right' as const, num: true }] : []),
+  ], [buckets, showTotal]);
+  const bIdx: Record<string, number> = Object.fromEntries(buckets.map((b, i) => [`b:${b.label}`, i]));
+  const g = useGrid<TbRow>('fdl-tb', gridCols, rows, (r, k) => {
+    if (k === 'le') return r.head[0];
+    if (k === 'lcoa') return r.head[1];
+    if (k === 'desc') return r.head[2];
+    if (k === 'bu') return r.head[3];
+    if (k === 'total') return r.rowTot;
+    return bIdx[k] !== undefined ? r.vals[bIdx[k]] : '';
+  }, { defFreeze: 'le', rowKey: (r) => r.key });
+  const footOf = (k: string) => (k === 'total' ? grand : bIdx[k] !== undefined ? bucketTotals[bIdx[k]] : null);
 
   const checks = [
     { ok: balanced, text: balanced ? 'Debits equal credits — both sides tie out.' : 'Debits do not equal credits.' },
@@ -335,7 +330,23 @@ function TrialBalanceTab({
             <path d={full ? 'M4 9h5V4M20 9h-5V4M20 15h-5v5M4 15h5v5' : 'M9 4H4v5M15 4h5v5M15 20h5v-5M9 20H4v-5'} />
           </svg>
         </button>
-        <button type="button" className="fc-h fc-btn" style={PRIMARY_BTN}>
+        {/* ingestion cadence */}
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button" className="fc-h fc-btn" onClick={() => setSetOpen((v) => !v)}
+            title={`TB upload settings — ${up.settings.freq.toLowerCase()} ingestion`} aria-label="TB upload settings" aria-expanded={setOpen}
+            style={{ ...SOFT_BTN, width: '34px', padding: 0, justifyContent: 'center', ...(setOpen ? { color: '#2563EB', border: '1px solid rgba(59,130,246,.45)' } : null) }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+            </svg>
+          </button>
+          {setOpen && <TbSettingsPanel up={up} onClose={() => setSetOpen(false)} />}
+        </div>
+        {/* upload status — progress ring and activity list */}
+        <TbStatusButton up={up} onOpen={() => setUpOpen(true)} />
+        <button type="button" className="fc-h fc-btn" onClick={() => setUpOpen(true)} style={PRIMARY_BTN}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />
           </svg>
@@ -343,214 +354,47 @@ function TrialBalanceTab({
         </button>
       </div>
 
+      {upOpen && (
+        <TbUploadModal up={up} onClose={() => setUpOpen(false)} onSettings={() => { setUpOpen(false); setSetOpen(true); }} />
+      )}
+
       <div style={{ overflow: 'auto', border: '1px solid #DCE0EB', borderRadius: '12px', flex: 1, minHeight: 0 }}>
-        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit' }}>
+        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit', tableLayout: 'fixed' }}>
           <thead>
-            <tr>
-              {cols.map((c, ci) => (
-                <th key={c.label} style={{ ...TH, textAlign: c.align, ...(ci === 0 ? { position: 'sticky', left: 0, zIndex: 6 } : null) }}>
-                  {c.label}
-                  <span style={{ display: 'block', marginTop: '2px', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '8.5px', fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#8A93AB' }}>
-                    {fieldKey(c.label)}
-                  </span>
-                </th>
-              ))}
-            </tr>
+            <GridHead g={g} />
           </thead>
           <tbody>
-            {rows.map((r, ri) => (
-              <tr key={ri}>
-                <td style={{ ...TD, position: 'sticky', left: 0, zIndex: 1, background: '#ECEFF6', fontWeight: 700, color: '#232C42' }}>{r.head[0]}</td>
-                <td style={{ ...TD, color: '#333D55', fontWeight: 600 }}>{r.head[1]}</td>
-                <td style={TD}>{r.head[2]}</td>
-                <td style={TD}>{r.head[3]}</td>
-                {r.vals.map((v, i) => (
-                  <td key={i} style={{ ...TD, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: v < 0 ? '#B42318' : '#333D55' }}>{fmtNet(v)}</td>
-                ))}
-                {showTotal && (
-                  <td style={{ ...TD, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: r.rowTot < 0 ? '#B42318' : '#232C42' }}>{fmtNet(r.rowTot)}</td>
-                )}
+            {g.rows.map((r) => (
+              <tr key={r.key}>
+                {g.cols.map((c) => {
+                  const bg = '#ECEFF6';
+                  if (c.key === 'le') return <td key={c.key} style={g.td(c, bg, { fontWeight: 700, color: '#232C42', fontSize: '10.5px' })}><Clip g={g} rk={r.key} ck={c.key}>{r.head[0]}</Clip></td>;
+                  if (c.key === 'lcoa') return <td key={c.key} style={g.td(c, bg, { color: '#333D55', fontWeight: 600, fontSize: '10.5px' })}><Clip g={g} rk={r.key} ck={c.key}>{r.head[1]}</Clip></td>;
+                  if (c.key === 'desc' || c.key === 'bu') {
+                    return <td key={c.key} style={g.td(c, bg, { color: '#65708C', fontSize: '10.5px' })}><Clip g={g} rk={r.key} ck={c.key}>{r.head[c.key === 'desc' ? 2 : 3]}</Clip></td>;
+                  }
+                  const v = c.key === 'total' ? r.rowTot : r.vals[bIdx[c.key]];
+                  return (
+                    <td key={c.key} style={g.td(c, bg, { fontSize: '10.5px', fontVariantNumeric: 'tabular-nums', fontWeight: c.key === 'total' ? 700 : 400, color: v < 0 ? '#B42318' : c.key === 'total' ? '#232C42' : '#333D55' })}>
+                      {fmtNet(v)}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
-            <tr>
-              <td style={{ ...TD, position: 'sticky', left: 0, zIndex: 1, background: '#E4E8F0', fontWeight: 700, color: '#232C42', borderTop: '2px solid #CBD2E0' }}>Total</td>
-              {[1, 2, 3].map((i) => <td key={i} style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0' }} />)}
-              {bucketTotals.map((t, i) => (
-                <td key={i} style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: t === 0 ? '#15803D' : '#B42318' }}>
-                  {fmtNet(t)}
-                </td>
-              ))}
-              {showTotal && (
-                <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: grand === 0 ? '#15803D' : '#B42318' }}>
-                  {fmtNet(grand)}
-                </td>
-              )}
-            </tr>
           </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-/* =========================== journal entries =========================== */
-
-type JeLine = {
-  lid: string; lcoa: string; gcoa: string; gdesc: string; le: string; leName: string;
-  bu: string; debit: string; credit: string; narr: string; label: string;
-};
-type Je = { id: string; period: string; status: string; jtype: string; lines: JeLine[] };
-
-const JE_SEED: Je[] = [
-  {
-    id: 'JE-ICE-0141', period: "June '26", status: 'Posted', jtype: 'Type 1',
-    lines: [
-      { lid: 'ice141a', lcoa: '2010', gcoa: 'G2000', gdesc: 'Trade & other payables', le: 'LK-OPCO', leName: 'Lanka Operations (Pvt) Ltd', bu: 'Distribution', debit: '2,500', credit: '', narr: 'ICE TJE-0001 — residual current-account difference on ICB-0005', label: 'ICE → Elim' },
-      { lid: 'ice141b', lcoa: '6300', gcoa: 'G6300', gdesc: 'Finance costs', le: 'LK-OPCO', leName: 'Lanka Operations (Pvt) Ltd', bu: 'Distribution', debit: '', credit: '2,500', narr: 'ICE TJE-0001 — residual current-account difference on ICB-0005', label: 'ICE → Elim' },
-    ],
-  },
-  {
-    id: 'JE-ICE-0142', period: "June '26", status: 'Parked', jtype: 'Type 1',
-    lines: [
-      { lid: 'ice142a', lcoa: '5010', gcoa: 'G5000', gdesc: 'Cost of sales', le: 'LK-OPCO', leName: 'Lanka Operations (Pvt) Ltd', bu: 'Distribution', debit: '18,400', credit: '', narr: 'ICE TJE-0002 — Colombo closing stock aligned to the physical count, URP recomputed', label: 'ICE → Elim' },
-      { lid: 'ice142b', lcoa: '1500', gcoa: 'G1500', gdesc: 'Property, plant & equipment', le: 'LK-OPCO', leName: 'Lanka Operations (Pvt) Ltd', bu: 'Distribution', debit: '', credit: '18,400', narr: 'ICE TJE-0002 — Colombo closing stock aligned to the physical count, URP recomputed', label: 'ICE → Elim' },
-    ],
-  },
-  {
-    id: 'JE-ICE-0143', period: "June '26", status: 'Posted', jtype: 'Type 1',
-    lines: [
-      { lid: 'ice143a', lcoa: '2500', gcoa: 'G2500', gdesc: 'Borrowings', le: 'IN-MFG', leName: 'Bharat Manufacturing Pvt Ltd', bu: 'Manufacturing', debit: '142,000', credit: '', narr: 'ICE TJE-0003 — deferred tax on building URP restated at the enacted 25.17% rate', label: 'ICE → Elim' },
-      { lid: 'ice143b', lcoa: '6100', gcoa: 'G6100', gdesc: 'Administrative expenses', le: 'IN-MFG', leName: 'Bharat Manufacturing Pvt Ltd', bu: 'Manufacturing', debit: '', credit: '142,000', narr: 'ICE TJE-0003 — deferred tax on building URP restated at the enacted 25.17% rate', label: 'ICE → Elim' },
-    ],
-  },
-];
-
-const ST_COLORS: Record<string, string> = {
-  Posted: '#15803D', Parked: '#65708C', Draft: '#65708C', 'In review': '#3B5BDB',
-};
-
-const num = (s: string) => Number(s.replace(/,/g, '')) || 0;
-
-function JournalEntriesTab() {
-  const [full, setFull] = useState(false);
-  const [sel, setSel] = useState<string[]>([]);
-  const lines = JE_SEED.flatMap((j) => j.lines.map((l) => ({ ...l, je: j })));
-  const totalDr = lines.reduce((s, l) => s + num(l.debit), 0);
-  const totalCr = lines.reduce((s, l) => s + num(l.credit), 0);
-  const balanced = totalDr === totalCr;
-
-  const JE_COLS = ['Entry', 'Status', 'LCOA', 'GCOA', 'Group Description', 'Legal Entity', 'BU', 'Debit', 'Credit', 'Narration', 'Label'];
-
-  return (
-    <section
-      style={{
-        ...SECTION,
-        padding: '22px',
-        ...(full
-          ? { position: 'fixed', top: 0, right: 0, bottom: 0, left: '68px', zIndex: 400, borderRadius: 0 }
-          : { flex: 1, minHeight: 0, borderRadius: '18px' }),
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '12px' }}>
-        <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '.5px', textTransform: 'uppercase', color: '#65708C' }}>
-          Top-side adjustments
-        </span>
-        <span style={{ fontSize: '11px', color: '#9AA3BA' }}>{JE_SEED.length} entries · {lines.length} lines</span>
-        <span
-          style={{
-            fontSize: '10px', fontWeight: 700, letterSpacing: '.5px', textTransform: 'uppercase',
-            padding: '3px 9px', borderRadius: '6px',
-            color: balanced ? '#15803D' : '#B42318',
-            background: balanced ? 'rgba(34,197,94,.14)' : 'rgba(180,35,24,.1)',
-          }}
-        >
-          {balanced ? 'Balanced' : 'Out of balance'}
-        </span>
-        <div style={{ flex: 1 }} />
-        {sel.length > 0 && (
-          <button
-            type="button" className="fc-h fc-btn" onClick={() => setSel([])}
-            style={{ ...SOFT_BTN, border: '1px solid rgba(180,35,24,.4)', background: 'rgba(180,35,24,.08)', color: '#B42318' }}
-          >
-            Delete {sel.length} line{sel.length === 1 ? '' : 's'}
-          </button>
-        )}
-        <button type="button" className="fc-h fc-btn" style={{ ...SOFT_BTN, color: '#414B62', border: '1px solid #CBD2E0', background: 'rgba(255,255,255,.6)' }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />
-          </svg>
-          Upload JE
-        </button>
-        <button type="button" className="fc-h fc-btn" style={PRIMARY_BTN} title="Adds a balanced debit and credit line. Entries are parked until a reviewer posts them.">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Add pair
-        </button>
-        <button
-          type="button" className="fc-h fc-btn" onClick={() => setFull((v) => !v)}
-          title={full ? 'Exit full screen' : 'View table full screen'}
-          style={{ ...SOFT_BTN, width: '34px', padding: 0, justifyContent: 'center' }}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d={full ? 'M4 9h5V4M20 9h-5V4M20 15h-5v5M4 15h5v5' : 'M9 4H4v5M15 4h5v5M15 20h5v-5M9 20H4v-5'} />
-          </svg>
-        </button>
-      </div>
-
-      <div style={{ overflow: 'auto', border: '1px solid #DCE0EB', borderRadius: '12px', flex: 1, minHeight: 0 }}>
-        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit' }}>
-          <thead>
+          <tfoot>
             <tr>
-              <th style={{ ...TH, width: '34px', textAlign: 'center' }} />
-              {JE_COLS.map((c) => (
-                <th key={c} style={{ ...TH, textAlign: c === 'Debit' || c === 'Credit' ? 'right' : 'left' }}>{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {lines.map((l) => {
-              const on = sel.includes(l.lid);
-              return (
-                <tr key={l.lid} style={on ? { background: 'rgba(59,130,246,.06)' } : undefined}>
-                  <td style={{ ...TD, textAlign: 'center' }}>
-                    <input
-                      type="checkbox"
-                      checked={on}
-                      onChange={() => setSel((s) => (s.includes(l.lid) ? s.filter((x) => x !== l.lid) : [...s, l.lid]))}
-                      style={{ width: '14px', height: '14px', cursor: 'pointer', accentColor: '#3B5BDB' }}
-                    />
+              {g.cols.map((c, i) => {
+                const t = footOf(c.key);
+                return (
+                  <td key={c.key} style={g.td(c, '#E4E8F0', { position: 'sticky', bottom: 0, zIndex: g.freeze && i <= g.cols.findIndex((x) => x.key === g.freeze) ? 4 : 3, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', fontSize: '10.5px', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: t === null ? '#232C42' : t === 0 ? '#15803D' : '#B42318' })}>
+                    {t === null ? (i === 0 ? 'Total' : '') : fmtNet(t)}
                   </td>
-                  <td style={{ ...TD, fontWeight: 700, color: '#232C42' }}>{l.je.id}</td>
-                  <td style={{ ...TD, fontWeight: 700, color: ST_COLORS[l.je.status] ?? '#65708C' }}>{l.je.status}</td>
-                  <td style={{ ...TD, color: '#0F766E', fontWeight: 700 }}>{l.lcoa}</td>
-                  <td style={{ ...TD, color: '#0F766E', fontWeight: 700 }}>{l.gcoa}</td>
-                  <td style={{ ...TD, color: '#333D55' }}>{l.gdesc}</td>
-                  <td style={TD} title={l.leName}>{l.le}</td>
-                  <td style={TD}>{l.bu}</td>
-                  <td style={{ ...TD, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#232C42', fontWeight: l.debit ? 700 : 400 }}>{l.debit || '—'}</td>
-                  <td style={{ ...TD, textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: '#232C42', fontWeight: l.credit ? 700 : 400 }}>{l.credit || '—'}</td>
-                  <td style={{ ...TD, whiteSpace: 'normal', maxWidth: '320px', lineHeight: 1.4 }}>{l.narr}</td>
-                  <td style={{ ...TD }}>
-                    <span style={{ fontSize: '9.5px', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', color: '#B45309', background: 'rgba(245,158,11,.14)' }}>
-                      {l.label}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-            <tr>
-              <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0' }} />
-              <td colSpan={7} style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', fontWeight: 700, color: '#232C42' }}>Total</td>
-              <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: balanced ? '#15803D' : '#B42318' }}>
-                {totalDr.toLocaleString('en-US')}
-              </td>
-              <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: balanced ? '#15803D' : '#B42318' }}>
-                {totalCr.toLocaleString('en-US')}
-              </td>
-              <td colSpan={2} style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0' }} />
+                );
+              })}
             </tr>
-          </tbody>
+          </tfoot>
         </table>
       </div>
     </section>
@@ -562,13 +406,40 @@ function JournalEntriesTab() {
 type Node =
   | { kind: 'grp'; key: string; label: string; kids: Node[] }
   | { kind: 'leaf'; key: string; label: string }
-  | { kind: 'sub'; label: string };
+  | { kind: 'sub'; key: string; label: string };
 
 const T = {
   grp: (key: string, label: string, kids: Node[]): Node => ({ kind: 'grp', key, label, kids }),
   leaf: (key: string, label: string): Node => ({ kind: 'leaf', key, label }),
-  sub: (label: string): Node => ({ kind: 'sub', label }),
+  /** subtotals are keyed so their captions can be renamed like any other label */
+  sub: (key: string, label: string): Node => ({ kind: 'sub', key, label }),
 };
+
+/**
+ * How the hierarchy is presented — framework, any manual re-ordering, renamed
+ * labels and the confirmation stamp. Held by the screen so it survives leaving
+ * the mapping view.
+ */
+export type FsliLayout = {
+  fw: 'usgaap' | 'ifrs';
+  /** parent key → child keys, once the user has promoted / demoted something */
+  order: Record<string, string[]>;
+  labels: Record<string, string>;
+  confirmed: { by: string; at: string } | null;
+};
+
+export const FSLI_LAYOUT0: FsliLayout = { fw: 'usgaap', order: {}, labels: {}, confirmed: null };
+
+/**
+ * The standard order for a framework (design `fwOrder`, line 8251). The Balance
+ * Sheet always leads and the Income Statement follows; the framework only
+ * decides whether current or non-current items come first.
+ */
+const fwOrder = (fw: FsliLayout['fw']): Record<string, string[]> => ({
+  root: ['bs', 'is'],
+  assets: fw === 'ifrs' ? ['nca', 'ca'] : ['ca', 'nca'],
+  liab: fw === 'ifrs' ? ['ncl', 'cl', 'eq'] : ['cl', 'ncl', 'eq'],
+});
 
 const FSLI_TREE: Node[] = [
   T.grp('bs', 'Balance Sheet', [
@@ -581,7 +452,7 @@ const FSLI_TREE: Node[] = [
         T.leaf('cca', 'Contract cost assets'),
         T.leaf('ppd', 'Prepaid expenses and other current assets'),
         T.leaf('ahs', 'Assets held for sale'),
-        T.sub('Total current assets'),
+        T.sub('tca', 'Total current assets'),
       ]),
       T.grp('nca', 'Non-current assets', [
         T.leaf('ppe', 'Property, plant & equipment, net'),
@@ -589,27 +460,27 @@ const FSLI_TREE: Node[] = [
         T.leaf('gw', 'Goodwill'),
         T.leaf('rou', 'Right-of-use assets'),
         T.leaf('dta', 'Deferred tax assets'),
-        T.sub('Total non-current assets'),
+        T.sub('tnca', 'Total non-current assets'),
       ]),
-      T.sub('Total assets'),
+      T.sub('ta', 'Total assets'),
     ]),
     T.grp('liab', 'Liabilities and stockholders’ equity', [
       T.grp('cl', 'Current liabilities', [
         T.leaf('ap', 'Trade and other payables'),
         T.leaf('accr', 'Accrued liabilities'),
         T.leaf('stb', 'Short-term borrowings'),
-        T.sub('Total current liabilities'),
+        T.sub('tcl', 'Total current liabilities'),
       ]),
       T.grp('ncl', 'Non-current liabilities', [
         T.leaf('ltb', 'Long-term borrowings'),
         T.leaf('dtl', 'Deferred tax liabilities'),
         T.leaf('lease', 'Lease liabilities'),
-        T.sub('Total non-current liabilities'),
+        T.sub('tncl', 'Total non-current liabilities'),
       ]),
       T.grp('eq', 'Stockholders’ equity', [
         T.leaf('sc', 'Share capital & reserves'),
         T.leaf('re', 'Retained earnings'),
-        T.sub('Total equity'),
+        T.sub('teq', 'Total equity'),
       ]),
     ]),
   ]),
@@ -668,8 +539,25 @@ const MON_META = {
 } as const;
 const MON_NEXT = { mon: 'non', non: 'mon' } as const;
 
-function FsliMapping({ onBack, map, setMap }: { onBack: () => void; map: Record<string, string[]>; setMap: (m: Record<string, string[]>) => void }) {
-  const [framework, setFramework] = useState<'usgaap' | 'ifrs'>('usgaap');
+/** the unmapped-COA panel's fold toggle — same button as the side navigation's (Sidebar.tsx) */
+const POOL_TOGGLE: React.CSSProperties = {
+  flex: 'none', width: '24px', height: '24px', borderRadius: '7px', display: 'grid', placeItems: 'center',
+  color: '#65708C', background: '#E4E8F0',
+  boxShadow: 'inset 1px 1px 3px rgba(166,175,195,.5),inset -1px -1px 3px rgba(255,255,255,.9)',
+};
+
+function FsliMapping({
+  onBack, map, setMap, layout, setLayout,
+}: {
+  onBack: () => void;
+  map: Record<string, string[]>;
+  setMap: (m: Record<string, string[]>) => void;
+  layout: FsliLayout;
+  setLayout: (l: FsliLayout) => void;
+}) {
+  const { currentUser } = useApp();
+  const confirmBy = currentUser.name;
+  const [poolOpen, setPoolOpen] = useState(true);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [mon, setMon] = useState<Record<string, 'mon' | 'non'>>(MON_DEFAULT);
   /** per-account overrides of the line item's classification (design: coaMon) */
@@ -692,6 +580,7 @@ function FsliMapping({ onBack, map, setMap }: { onBack: () => void; map: Record<
     Object.keys(map).forEach((k) => { next[k] = map[k].filter((x) => !codes.includes(x)); });
     if (target) next[target] = [...(next[target] ?? []), ...codes];
     setMap(next);
+    if (layout.confirmed) setLayout({ ...layout, confirmed: null });
     setSel([]);
     setAnchor(null);
   };
@@ -719,192 +608,289 @@ function FsliMapping({ onBack, map, setMap }: { onBack: () => void; map: Record<
   /** dragging a selected tile carries the whole selection */
   const dragPayload = (code: string) => (sel.includes(code) && sel.length > 1 ? sel : [code]);
 
-  const order = (nodes: Node[]): Node[] =>
-    framework === 'ifrs'
-      ? [...nodes].reverse().map((n) => (n.kind === 'grp' ? { ...n, kids: order(n.kids) } : n))
-      : nodes.map((n) => (n.kind === 'grp' ? { ...n, kids: order(n.kids) } : n));
+  /* ---- presentation order (design `buildFsli()` fwOrder / orderChildren, line 8257) ---- */
+  const { fw, order: orderOv, labels } = layout;
+  /** any change to the hierarchy or the mapping re-opens it for confirmation */
+  const patchLayout = (p: Partial<FsliLayout>) => setLayout({ ...layout, ...p, confirmed: null });
 
-  const renderNodes = (nodes: Node[], depth: number): React.ReactNode =>
-    nodes.map((n, i) => {
+  const orderChildren = (nodes: Node[], parentKey: string) => {
+    const movable = nodes.filter((n): n is Exclude<Node, { kind: 'sub' }> => n.kind !== 'sub');
+    const subs = nodes.filter((n) => n.kind === 'sub');
+    const byKey = Object.fromEntries(movable.map((n) => [n.key, n]));
+    const want = orderOv[parentKey] ?? fwOrder(fw)[parentKey] ?? movable.map((n) => n.key);
+    const list = want.map((k) => byKey[k]).filter(Boolean);
+    movable.forEach((n) => { if (!list.includes(n)) list.push(n); });
+    return { list, subs, keys: list.map((n) => n.key) };
+  };
+
+  /** promote / demote within the parent — swaps with the sibling above or below */
+  const move = (parentKey: string, keys: string[], key: string, dir: -1 | 1) => () => {
+    const i = keys.indexOf(key);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= keys.length) return;
+    const nk = [...keys];
+    [nk[i], nk[j]] = [nk[j], nk[i]];
+    patchLayout({ order: { ...orderOv, [parentKey]: nk } });
+  };
+
+  /* ---- renaming: double-click a label, or its pencil ---- */
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const [editVal, setEditVal] = useState('');
+  const labelOf = (key: string, base: string) => labels[key] ?? base;
+  const startEdit = (key: string, cur: string) => { setEditKey(key); setEditVal(cur); };
+  const commitEdit = () => {
+    if (!editKey) return;
+    const v = editVal.replace(/\s+/g, ' ').trim();
+    if (v && v !== labels[editKey]) patchLayout({ labels: { ...labels, [editKey]: v } });
+    setEditKey(null);
+  };
+
+  /* ---- the two-column grid: FSLI | mapped COAs, divider resizable ---- */
+  const [colW, setColW] = useState(300);
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const x0 = e.clientX;
+    const w0 = colW;
+    const mv = (ev: MouseEvent) => setColW(Math.max(200, Math.min(560, w0 + ev.clientX - x0)));
+    const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', mv);
+    window.addEventListener('mouseup', up);
+  };
+  const [mapQ, setMapQ] = useState('');
+  const mf = mapQ.trim().toLowerCase();
+  const chipMatch = (id: string) => !mf || `${id} ${CATALOG_NAME[id] ?? ''}`.toLowerCase().includes(mf);
+  const visible = (n: Node): boolean =>
+    !mf ? true : n.kind === 'sub' ? false : n.kind === 'leaf' ? (map[n.key] ?? []).some(chipMatch) : n.kids.some(visible);
+
+  const DIVIDER = '#3B82F6';
+  const pad = (depth: number) => 14 + depth * 18;
+
+  const editBox = (
+    <input
+      value={editVal} autoFocus
+      onChange={(e) => setEditVal(e.target.value)}
+      onBlur={commitEdit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commitEdit(); }
+        else if (e.key === 'Escape') setEditKey(null);
+      }}
+      style={{ ...INSET, flex: 1, minWidth: 0, height: '26px', padding: '0 8px', fontSize: '12px', fontWeight: 700, border: `1px solid ${DIVIDER}` }}
+    />
+  );
+
+  const label = (key: string, text: string, style: React.CSSProperties) =>
+    editKey === key ? editBox : (
+      <>
+        <span onDoubleClick={() => startEdit(key, text)} title="Double-click to rename" style={{ flex: 1, minWidth: 0, cursor: 'text', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', ...style }}>
+          {text}
+        </span>
+        <button
+          type="button" className="fc-btn" onClick={() => startEdit(key, text)} title="Rename" aria-label={`Rename ${text}`}
+          style={{ flex: 'none', width: '18px', height: '18px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#9AA3BA' }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></svg>
+        </button>
+      </>
+    );
+
+  const arrows = (parentKey: string, keys: string[], key: string, text: string, stacked: boolean) => {
+    const i = keys.indexOf(key);
+    const up = i > 0;
+    const dn = i >= 0 && i < keys.length - 1;
+    const btn = (on: boolean, dir: -1 | 1) => (
+      <button
+        type="button" className="fc-btn" disabled={!on} onClick={move(parentKey, keys, key, dir)}
+        title={dir < 0 ? `Promote — move “${text}” up` : `Demote — move “${text}” down`}
+        aria-label={dir < 0 ? `Move ${text} up` : `Move ${text} down`}
+        style={{
+          width: '20px', height: stacked ? '13px' : '20px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: '8.5px', lineHeight: 1, color: on ? '#4055C8' : '#C7CCD9', background: on ? '#E4E8F0' : 'transparent',
+          cursor: on ? 'pointer' : 'default',
+        }}
+      >
+        {dir < 0 ? '▲' : '▼'}
+      </button>
+    );
+    return (
+      <span style={{ flex: 'none', display: 'inline-flex', flexDirection: stacked ? 'column' : 'row', gap: stacked ? '1px' : '3px' }}>
+        {btn(up, -1)}{btn(dn, 1)}
+      </span>
+    );
+  };
+
+  const rows: React.ReactNode[] = [];
+  const walk = (nodes: Node[], depth: number, parentKey: string) => {
+    const { list, subs, keys } = orderChildren(nodes, parentKey);
+    [...list, ...subs].forEach((n) => {
+      if (!visible(n)) return;
+
       if (n.kind === 'sub') {
-        return (
-          <div
-            key={`${n.label}-${i}`}
-            style={{
-              padding: `6px 12px 6px ${12 + depth * 18}px`, fontSize: '11px', fontWeight: 700,
-              color: '#414B62', borderTop: '1px solid #DFE3EC', background: 'rgba(255,255,255,.35)',
-            }}
-          >
-            {n.label}
-          </div>
+        const text = labelOf(n.key, n.label);
+        rows.push(
+          <div key={n.key} style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid #DFE3EC', background: 'rgba(219,224,235,.45)' }}>
+            <div style={{ flex: 'none', width: `${colW}px`, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: '6px', padding: `8px 8px 8px ${pad(depth)}px` }}>
+              {label(n.key, text, { fontSize: '11.5px', fontWeight: 700, color: '#414B62' })}
+            </div>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', padding: '8px 14px', borderLeft: `3px solid ${DIVIDER}40`, fontSize: '11px', color: '#9AA3BA', fontStyle: 'italic' }}>
+              Subtotal — derived
+            </div>
+          </div>,
         );
+        return;
       }
+
+      const text = labelOf(n.key, n.label);
+
       if (n.kind === 'grp') {
-        const isCol = collapsed[n.key] === true;
-        return (
-          <div key={n.key}>
-            <button
-              type="button"
-              className="fc-btn"
-              onClick={() => setCollapsed((c) => ({ ...c, [n.key]: !isCol }))}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '7px', width: '100%',
-                padding: `7px 12px 7px ${12 + depth * 18}px`,
-                fontSize: depth === 0 ? '12px' : '11.5px', fontWeight: 700,
-                color: depth === 0 ? '#232C42' : '#414B62',
-                background: depth === 0 ? 'rgba(59,130,246,.07)' : 'transparent',
-                borderBottom: '1px solid #E7EAF2',
-              }}
-            >
-              <svg
-                width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"
-                style={{ flex: 'none', transition: 'transform .18s', transform: `rotate(${isCol ? 0 : 90}deg)` }}
+        const isCol = !mf && collapsed[n.key] === true;
+        rows.push(
+          <div key={n.key} style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid #DFE3EC', background: depth === 0 ? 'rgba(59,130,246,.07)' : 'rgba(228,232,240,.5)' }}>
+            <div style={{ flex: 'none', width: `${colW}px`, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: '7px', padding: `${depth === 0 ? 11 : 9}px 8px ${depth === 0 ? 11 : 9}px ${pad(depth)}px` }}>
+              <button
+                type="button" className="fc-btn" onClick={() => setCollapsed((c) => ({ ...c, [n.key]: !isCol }))}
+                title={isCol ? 'Expand' : 'Collapse'} aria-expanded={!isCol}
+                style={{ flex: 'none', width: '18px', height: '18px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: '#E4E8F0', boxShadow: '1px 1px 2px rgba(166,175,195,.55),-1px -1px 2px rgba(255,255,255,.95)', color: '#4055C8', fontSize: '12px', fontWeight: 700, lineHeight: 1 }}
               >
-                <path d="M7 5l7 7-7 7" />
-              </svg>
-              {n.label}
-            </button>
-            {!isCol && renderNodes(n.kids, depth + 1)}
-          </div>
+                {isCol ? '＋' : '－'}
+              </button>
+              {label(n.key, text, { fontSize: depth === 0 ? '13.5px' : '12.5px', fontWeight: 700, color: '#232C42' })}
+            </div>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 12px', borderLeft: `3px solid ${DIVIDER}40` }}>
+              {arrows(parentKey, keys, n.key, text, false)}
+            </div>
+          </div>,
         );
+        if (!isCol) walk(n.kids, depth + 1, n.key);
+        return;
       }
+
+      /* ---- leaf: FSLI on the left, its mapped COAs on the right ---- */
       const ids = map[n.key] ?? [];
+      const shown = mf ? ids.filter(chipMatch) : ids;
       const isOver = over === n.key;
       const leafCls: 'mon' | 'non' = mon[n.key] === 'non' ? 'non' : 'mon';
       const LM = MON_META[leafCls];
-      return (
-        <div
-          key={n.key}
-          style={{
-            display: 'flex', alignItems: 'flex-start', gap: '9px',
-            padding: `7px 12px 7px ${12 + depth * 18}px`,
-            borderBottom: '1px solid #E7EAF2',
-          }}
-        >
-          {/* line-item monetary class */}
-          <button
-            type="button"
-            className="fc-btn"
-            onClick={() => setMon((x) => ({ ...x, [n.key]: MON_NEXT[leafCls] }))}
-            title={LM[2]}
-            aria-label={LM[0]}
-            style={{
-              flex: 'none', marginTop: '3px', width: '11px', height: '11px', borderRadius: '50%',
-              background: LM[1], boxShadow: 'inset 0 1px 1px rgba(255,255,255,.5)',
-            }}
-          />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '11.5px', color: '#333D55' }}>{n.label}</div>
-
-            {/* drop zone — holds the mapped account chips */}
-            <div
-              onDragOver={(e) => { e.preventDefault(); setOver(n.key); }}
-              onDragLeave={() => setOver((o) => (o === n.key ? null : o))}
-              onDrop={(e) => { e.preventDefault(); setOver(null); if (drag) assignMany(dragPayload(drag), n.key); setDrag(null); }}
-              style={{
-                display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '5px',
-                minHeight: '26px', marginTop: '5px', padding: '3px 5px', borderRadius: '9px',
-                border: `1px dashed ${isOver ? '#3B82F6' : 'transparent'}`,
-                background: isOver ? 'rgba(59,130,246,.12)' : 'rgba(228,232,240,.4)',
-                transition: 'background .12s, border-color .12s',
-              }}
-            >
-              {ids.map((id) => {
-                const cur: 'mon' | 'non' = coaMon[id] ?? leafCls;
-                const CM = MON_META[cur];
-                const ovr = !!coaMon[id] && coaMon[id] !== leafCls;
-                return (
-                  <span
-                    key={id}
-                    draggable
-                    onDragStart={() => setDrag(id)}
-                    onDragEnd={() => { setDrag(null); setOver(null); }}
-                    title={`${id}  ·  ${CATALOG_NAME[id]}`}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '7px', cursor: 'grab', maxWidth: '100%',
-                      overflow: 'hidden', padding: '4px 5px 4px 8px', borderRadius: '8px', background: '#ECEFF6',
-                      border: `1px solid ${ovr ? `${CM[1]}66` : '#CBD6E8'}`,
-                      boxShadow: '1px 1px 3px rgba(166,175,195,.4),-1px -1px 3px rgba(255,255,255,.85)',
-                      fontSize: '11px', fontWeight: 600,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className="fc-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const nx = MON_NEXT[cur];
-                        setCoaMon((m2) => {
-                          const next = { ...m2 };
-                          if (nx === leafCls) delete next[id];
-                          else next[id] = nx;
-                          return next;
-                        });
-                      }}
-                      title={`${CM[0]} — ${CATALOG_NAME[id]}. Click to switch to ${MON_META[MON_NEXT[cur]][0].toLowerCase()}.${ovr ? ' Overrides the line item classification.' : ''}`}
-                      style={{
-                        flex: 'none', boxSizing: 'border-box', width: '11px', height: '11px', borderRadius: '50%',
-                        background: CM[1],
-                        ...(ovr
-                          ? { boxShadow: `0 0 0 2px #fff,0 0 0 3.5px ${CM[1]}`, marginRight: '2px' }
-                          : { boxShadow: 'inset 0 1px 1px rgba(255,255,255,.5)' }),
-                      }}
-                    />
-                    <b style={{ flex: 'none', fontWeight: 700, color: '#232C42' }}>{id}</b>
-                    <span
-                      style={{
-                        flex: 1, minWidth: 0, color: '#65708C', overflow: 'hidden',
-                        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {CATALOG_NAME[id]}
-                    </span>
-                    <button
-                      type="button"
-                      className="fc-btn"
-                      onClick={(e) => { e.stopPropagation(); assign(id, null); }}
-                      title="Unmap this account"
-                      style={{
-                        flex: 'none', width: '16px', height: '16px', borderRadius: '5px', color: '#9AA3BA',
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', lineHeight: 1,
-                      }}
-                    >
-                      ×
-                    </button>
-                  </span>
-                );
-              })}
-              {ids.length === 0 && (
-                <span style={{ fontSize: '10.5px', color: '#A6AEC2', fontStyle: 'italic', pointerEvents: 'none' }}>
-                  Drag COAs here
-                </span>
-              )}
-            </div>
+      rows.push(
+        <div key={n.key} style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid #DFE3EC', ...(isOver ? { background: 'rgba(59,130,246,.08)' } : null) }}>
+          <div style={{ flex: 'none', width: `${colW}px`, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: '6px', padding: `8px 8px 8px ${pad(depth)}px` }}>
+            <button
+              type="button" className="fc-btn" onClick={() => setMon((x) => ({ ...x, [n.key]: MON_NEXT[leafCls] }))}
+              title={LM[2]} aria-label={LM[0]}
+              style={{ flex: 'none', width: '11px', height: '11px', borderRadius: '50%', background: LM[1], boxShadow: `inset 0 1px 1px rgba(255,255,255,.5),0 0 0 3px ${LM[1]}1F` }}
+            />
+            {label(n.key, text, { fontSize: '12px', fontWeight: 600, color: '#414B62' })}
+            {arrows(parentKey, keys, n.key, text, true)}
           </div>
-        </div>
+
+          {/* drop zone — the mapped COAs column */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setOver(n.key); }}
+            onDragLeave={() => setOver((o) => (o === n.key ? null : o))}
+            onDrop={(e) => { e.preventDefault(); setOver(null); if (drag) assignMany(dragPayload(drag), n.key); setDrag(null); }}
+            style={{
+              flex: 1, minWidth: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '7px', padding: '8px 14px',
+              borderLeft: `3px solid ${isOver || ids.length ? DIVIDER : `${DIVIDER}40`}`,
+              background: isOver ? 'rgba(59,130,246,.1)' : ids.length ? 'transparent' : 'rgba(228,232,240,.35)',
+              transition: 'background .12s, border-color .12s',
+            }}
+          >
+            {shown.map((id) => {
+              const cur: 'mon' | 'non' = coaMon[id] ?? leafCls;
+              const CM = MON_META[cur];
+              const ovr = !!coaMon[id] && coaMon[id] !== leafCls;
+              return (
+                <span
+                  key={id} draggable
+                  onDragStart={() => setDrag(id)}
+                  onDragEnd={() => { setDrag(null); setOver(null); }}
+                  title={`${id}  ·  ${CATALOG_NAME[id]}`}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '7px', cursor: 'grab', maxWidth: '100%', overflow: 'hidden',
+                    padding: '4px 5px 4px 8px', borderRadius: '8px', background: '#ECEFF6',
+                    border: `1px solid ${ovr ? `${CM[1]}66` : '#CBD6E8'}`,
+                    boxShadow: '1px 1px 3px rgba(166,175,195,.4),-1px -1px 3px rgba(255,255,255,.85)',
+                    fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap',
+                  }}
+                >
+                  <button
+                    type="button" className="fc-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const nx = MON_NEXT[cur];
+                      setCoaMon((m2) => {
+                        const next = { ...m2 };
+                        if (nx === leafCls) delete next[id];
+                        else next[id] = nx;
+                        return next;
+                      });
+                    }}
+                    title={`${CM[0]} — ${CATALOG_NAME[id]}. Click to switch to ${MON_META[MON_NEXT[cur]][0].toLowerCase()}.${ovr ? ' Overrides the line item classification.' : ''}`}
+                    style={{
+                      flex: 'none', boxSizing: 'border-box', width: '11px', height: '11px', borderRadius: '50%', background: CM[1],
+                      ...(ovr ? { boxShadow: `0 0 0 2px #fff,0 0 0 3.5px ${CM[1]}`, marginRight: '2px' } : { boxShadow: 'inset 0 1px 1px rgba(255,255,255,.5)' }),
+                    }}
+                  />
+                  <b style={{ flex: 'none', fontWeight: 700, color: '#232C42' }}>{id}</b>
+                  <span style={{ flex: 1, minWidth: 0, color: '#65708C', overflow: 'hidden', textOverflow: 'ellipsis' }}>{CATALOG_NAME[id]}</span>
+                  <button
+                    type="button" className="fc-btn" onClick={(e) => { e.stopPropagation(); assign(id, null); }} title="Unmap this account"
+                    style={{ flex: 'none', width: '16px', height: '16px', borderRadius: '5px', color: '#9AA3BA', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', lineHeight: 1 }}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {ids.length === 0 && (
+              <span style={{ fontSize: '10.5px', color: '#A6AEC2', fontStyle: 'italic', pointerEvents: 'none' }}>Drag COAs here</span>
+            )}
+          </div>
+        </div>,
       );
     });
+  };
+  walk(FSLI_TREE, 0, 'root');
+
+  /* ---- confirm mappings — every account must sit under a line item first ---- */
+  const unmappedCount = CATALOG.length - mapped.size;
+  const [confirmMsg, setConfirmMsg] = useState<string | null>(null);
+  const confirm = () => {
+    if (unmappedCount > 0) {
+      setConfirmMsg(`${unmappedCount} account${unmappedCount === 1 ? ' is' : 's are'} still unmapped — map every COA before confirming.`);
+      return;
+    }
+    setConfirmMsg(null);
+    setLayout({ ...layout, confirmed: { by: confirmBy, at: new Date().toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) } });
+  };
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '12px' }}>
       {/* hierarchy */}
       <section style={{ ...SECTION, flex: 1, minWidth: 0, borderRadius: '18px', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', padding: '16px 18px 14px' }}>
-          <button type="button" className="fc-h fc-btn" onClick={onBack} style={{ ...SOFT_BTN, color: '#3B5BDB' }}>
+          <button
+            type="button" className="fc-h fc-btn" onClick={onBack}
+            title="Back to the Financial Data Layer — trial balance and journal entries"
+            style={{ ...SOFT_BTN, color: '#3B5BDB' }}
+          >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <path d="M15 6l-6 6 6 6" />
             </svg>
-            Back
+            Financial Data Layer
           </button>
           <span style={{ fontSize: '15px', fontWeight: 700, color: '#232C42' }}>FSLI Hierarchy</span>
+          <span
+            title="Every local account must be mapped to a Financial Statement Line Item before it flows to the consolidated faces. Drag accounts from Unmapped COAs onto a line to map them; drag a chip back to unmap. Double-click any label to rename it; ▲ ▼ promote or demote it within its group."
+            style={{ flex: 'none', cursor: 'help', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '15px', height: '15px', borderRadius: '50%', background: '#3B5BDB', color: '#fff', fontSize: '9px', fontWeight: 700, fontStyle: 'italic', lineHeight: 1 }}
+          >
+            i
+          </span>
           <span style={{ fontSize: '11.5px', color: '#7A84A0', fontStyle: 'italic' }}>{mapped.size} accounts mapped</span>
           <span
             title="Line items and individual accounts classified as monetary or non-monetary for IAS 21 / ASC 830 translation. Click the dot on a line item to switch it; click the dot on an account chip to override that account."
             style={{
-              display: 'inline-flex', alignItems: 'center', gap: '9px', height: '24px', padding: '0 11px',
-              borderRadius: '9px', background: '#E4E8F0',
-              boxShadow: 'inset 2px 2px 5px rgba(166,175,195,.45),inset -2px -2px 5px rgba(255,255,255,.9)',
-              fontSize: '10px', fontWeight: 700, color: '#65708C',
+              display: 'inline-flex', alignItems: 'center', gap: '9px', height: '24px', padding: '0 11px', borderRadius: '9px', background: '#E4E8F0',
+              boxShadow: 'inset 2px 2px 5px rgba(166,175,195,.45),inset -2px -2px 5px rgba(255,255,255,.9)', fontSize: '10px', fontWeight: 700, color: '#65708C',
             }}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
@@ -915,67 +901,141 @@ function FsliMapping({ onBack, map, setMap }: { onBack: () => void; map: Record<
               <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: MON_META.non[1] }} />
               Non-monetary
             </span>
-            {Object.keys(coaMon).length > 0 && (
-              <span style={{ color: '#3B5BDB' }}>{Object.keys(coaMon).length} account overrides</span>
-            )}
+            {Object.keys(coaMon).length > 0 && <span style={{ color: '#3B5BDB' }}>{Object.keys(coaMon).length} account overrides</span>}
           </span>
           <div style={{ flex: 1 }} />
           <div
-            title="Presentation order follows the selected reporting framework"
+            title="Balance Sheet always leads and the Income Statement follows. IFRS presents non-current before current; US GAAP presents current first."
             style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '3px', borderRadius: '9px', background: '#E4E8F0', boxShadow: 'inset 2px 2px 5px rgba(166,175,195,.45),inset -2px -2px 5px rgba(255,255,255,.9)' }}
           >
-            {(['usgaap', 'ifrs'] as const).map((fw) => (
+            {(['usgaap', 'ifrs'] as const).map((k) => (
               <button
-                key={fw}
-                type="button"
-                className="fc-h fc-btn"
-                onClick={() => setFramework(fw)}
+                key={k} type="button" className="fc-h fc-btn" aria-pressed={fw === k}
+                // a framework switch restores its standard order — BS first, IS second
+                onClick={() => { if (fw !== k) patchLayout({ fw: k, order: {} }); }}
                 style={{
                   height: '24px', padding: '0 11px', borderRadius: '7px', fontSize: '11px', fontWeight: 700,
-                  ...(framework === fw
-                    ? { background: 'linear-gradient(145deg,#3B82F6,#2563EB)', color: '#fff' }
-                    : { color: '#7A84A0' }),
+                  ...(fw === k ? { background: 'linear-gradient(145deg,#3B82F6,#2563EB)', color: '#fff' } : { color: '#7A84A0' }),
                 }}
               >
-                {fw === 'usgaap' ? 'US GAAP' : 'IFRS'}
+                {k === 'usgaap' ? 'US GAAP' : 'IFRS'}
               </button>
             ))}
           </div>
-          <button type="button" className="fc-h fc-btn" onClick={() => setCollapsed({})} style={{ ...SOFT_BTN, height: '28px', color: '#3B5BDB' }}>Expand all</button>
+          <button type="button" className="fc-h fc-btn" onClick={() => setCollapsed({})} style={{ ...SOFT_BTN, height: '28px', color: '#3B5BDB' }}>＋ Expand</button>
           <button
             type="button" className="fc-h fc-btn"
             onClick={() => {
               const all: Record<string, boolean> = {};
-              const walk = (ns: Node[]) => ns.forEach((n) => { if (n.kind === 'grp') { all[n.key] = true; walk(n.kids); } });
-              walk(FSLI_TREE);
+              const w = (ns: Node[]) => ns.forEach((n) => { if (n.kind === 'grp') { all[n.key] = true; w(n.kids); } });
+              w(FSLI_TREE);
               setCollapsed(all);
             }}
             style={{ ...SOFT_BTN, height: '28px', color: '#3B5BDB' }}
           >
-            Collapse all
+            － Collapse
           </button>
+          {layout.confirmed ? (
+            <span
+              title={`Confirmed by ${layout.confirmed.by} · ${layout.confirmed.at}. Any change to the mapping or hierarchy re-opens it.`}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', height: '32px', padding: '0 14px', borderRadius: '9px', fontSize: '12px', fontWeight: 700, color: '#15803D', background: 'rgba(21,128,61,.1)', border: '1px solid rgba(21,128,61,.3)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+              Mappings confirmed · {layout.confirmed.at}
+            </span>
+          ) : (
+            <button
+              type="button" className="fc-h fc-btn" onClick={confirm}
+              title="Lock in the mapping so it flows to the consolidated faces"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', height: '32px', padding: '0 16px', borderRadius: '9px', background: 'linear-gradient(145deg,#3B82F6,#2563EB)', fontSize: '12px', fontWeight: 700, color: '#fff', boxShadow: '2px 2px 8px rgba(37,99,235,.3)' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+              Confirm mappings
+            </button>
+          )}
         </div>
-        <div
-          style={{
-            display: 'flex', alignItems: 'stretch', borderTop: '1px solid #DFE3EC',
-            borderBottom: '1px solid #CBD2E0', background: '#E4E8F0',
-            padding: '7px 12px', fontSize: '9px', fontWeight: 700, letterSpacing: '.4px',
-            textTransform: 'uppercase', color: '#1B3A5C',
-          }}
-        >
-          Financial Statement Line Item
+
+        {confirmMsg && !layout.confirmed && (
+          <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '0 18px 12px', padding: '8px 12px', borderRadius: '10px', background: 'rgba(245,158,11,.12)', border: '1px solid rgba(217,119,6,.35)', fontSize: '11.5px', fontWeight: 600, color: '#92400E' }}>
+            <span style={{ flex: 1 }}>{confirmMsg}</span>
+            <button type="button" className="fc-btn" onClick={() => setConfirmMsg(null)} style={{ fontSize: '11px', fontWeight: 700, color: '#B45309' }}>Dismiss</button>
+          </div>
+        )}
+
+        {/* column heads — FSLI | blue divider | mapped COAs */}
+        <div style={{ display: 'flex', alignItems: 'stretch', borderTop: '1px solid #DFE3EC', borderBottom: '1px solid #CBD2E0', background: '#E4E8F0' }}>
+          <span style={{ flex: 'none', boxSizing: 'border-box', width: `${colW}px`, padding: '8px 14px', fontSize: '9.5px', fontWeight: 700, letterSpacing: '.6px', textTransform: 'uppercase', color: '#7A84A0', display: 'flex', alignItems: 'center' }}>
+            Financial Statement Line Item
+          </span>
+          <span onMouseDown={startResize} title="Drag to resize the column" style={{ flex: 'none', width: '9px', marginLeft: '-4px', marginRight: '-5px', cursor: 'col-resize', zIndex: 2 }} />
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '5px 12px', borderLeft: `3px solid ${DIVIDER}` }}>
+            <span style={{ flex: 'none', fontSize: '9.5px', fontWeight: 700, letterSpacing: '.6px', textTransform: 'uppercase', color: '#7A84A0' }}>Mapped COAs</span>
+            <div style={{ position: 'relative', flex: 'none', width: '210px', maxWidth: '100%' }}>
+              <input
+                value={mapQ} onChange={(e) => setMapQ(e.target.value)} placeholder="Filter mapped accounts…"
+                style={{ ...INSET, width: '100%', boxSizing: 'border-box', height: '26px', fontSize: '11px', padding: '0 24px 0 9px' }}
+              />
+              {mf && (
+                <button type="button" className="fc-btn" onClick={() => setMapQ('')} aria-label="Clear filter" style={{ position: 'absolute', right: '6px', top: '5px', fontSize: '13px', lineHeight: 1, color: '#9AA3BA' }}>×</button>
+              )}
+            </div>
+          </div>
         </div>
-        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>{renderNodes(order(FSLI_TREE), 0)}</div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+          {rows}
+          {mf && rows.length === 0 && (
+            <div style={{ padding: '24px', textAlign: 'center', fontSize: '11.5px', color: '#7A84A0', fontStyle: 'italic' }}>No mapped account matches “{mapQ}”.</div>
+          )}
+        </div>
       </section>
 
-      {/* unmapped pool */}
-      <section style={{ ...SECTION, width: '272px', flex: 'none', borderRadius: '18px', overflow: 'hidden' }}>
+      {/*
+        * dropping a mapped chip back here unmaps it (design `onFsliPoolDrop`, line 8454);
+        * the panel folds to a strip with the same toggle as the side navigation
+        * (design `onPoolCollapse` / `poolCollapsed`, line 1523)
+        */}
+      <section
+        onDragOver={(e) => { if (drag && mapped.has(drag)) e.preventDefault(); }}
+        onDrop={(e) => { e.preventDefault(); if (drag) assign(drag, null); setDrag(null); setOver(null); }}
+        style={{
+          ...SECTION, width: poolOpen ? '272px' : '52px', flex: 'none', borderRadius: '18px', overflow: 'hidden',
+          transition: 'width .22s ease',
+        }}
+      >
+        {!poolOpen ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '14px 0' }}>
+            <button
+              type="button" className="fc-btn" onClick={() => setPoolOpen(true)}
+              title="Show unmapped COAs" aria-label="Expand unmapped COAs panel" aria-expanded={false}
+              style={POOL_TOGGLE}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+            </button>
+            <span style={{ fontSize: '10px', fontWeight: 700, color: '#B45309', background: 'rgba(245,158,11,.15)', padding: '2px 6px', borderRadius: '6px' }}>
+              {pool.length}
+            </span>
+            <span
+              onClick={() => setPoolOpen(true)}
+              style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', cursor: 'pointer', fontSize: '11px', fontWeight: 700, letterSpacing: '.5px', color: '#65708C', whiteSpace: 'nowrap' }}
+            >
+              Unmapped COAs
+            </span>
+          </div>
+        ) : (
+        <>
         <div style={{ padding: '16px 16px 12px', borderBottom: '1px solid #DCE0EB' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ flex: 1, fontSize: '13px', fontWeight: 700, color: '#232C42' }}>Unmapped COAs</span>
+            <span style={{ flex: 1, fontSize: '13px', fontWeight: 700, color: '#232C42', whiteSpace: 'nowrap' }}>Unmapped COAs</span>
             <span style={{ fontSize: '10px', fontWeight: 700, color: '#B45309', background: 'rgba(245,158,11,.15)', padding: '2px 8px', borderRadius: '6px' }}>
               {pool.length}
             </span>
+            <button
+              type="button" className="fc-btn" onClick={() => setPoolOpen(false)}
+              title="Collapse panel" aria-label="Collapse unmapped COAs panel" aria-expanded
+              style={POOL_TOGGLE}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+            </button>
           </div>
           <input
             value={poolQ}
@@ -1036,6 +1096,8 @@ function FsliMapping({ onBack, map, setMap }: { onBack: () => void; map: Record<
             </div>
           )}
         </div>
+        </>
+        )}
       </section>
     </div>
   );
@@ -1046,6 +1108,9 @@ function FsliMapping({ onBack, map, setMap }: { onBack: () => void; map: Record<
 export default function FinancialDataLayer() {
   const [tab, setTab] = useState<'tb' | 'je' | 'fsli'>('tb');
   const [map, setMap] = useState<Record<string, string[]>>(DEFAULT_MAP);
+  const [fsliLayout, setFsliLayout] = useState<FsliLayout>(FSLI_LAYOUT0);
+  const tbUp = useTbUploads();
+  const journal = useJournal();
 
   const mappedCount = new Set(Object.values(map).flat()).size;
   const unmapped = CATALOG.length - mappedCount;
@@ -1084,9 +1149,9 @@ export default function FinancialDataLayer() {
         </div>
       )}
 
-      {tab === 'tb' && <TrialBalanceTab onOpenFsli={() => setTab('fsli')} unmapped={unmapped} />}
-      {tab === 'je' && <JournalEntriesTab />}
-      {tab === 'fsli' && <FsliMapping onBack={() => setTab('tb')} map={map} setMap={setMap} />}
+      {tab === 'tb' && <TrialBalanceTab onOpenFsli={() => setTab('fsli')} unmapped={unmapped} up={tbUp} />}
+      {tab === 'je' && <JournalEntriesTab store={journal} />}
+      {tab === 'fsli' && <FsliMapping onBack={() => setTab('tb')} map={map} setMap={setMap} layout={fsliLayout} setLayout={setFsliLayout} />}
     </div>
   );
 }

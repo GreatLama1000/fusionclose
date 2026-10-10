@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import Icon from '../components/Icon';
+import { Clip, GridCol, GridHead, useGrid } from '../components/grid/Grid';
 
 type Entity = {
   code: string;
@@ -32,6 +33,18 @@ const STATUS_TONE: Record<Entity['status'], string> = {
   acquired: 'bg-brand-500/10 text-brand-500',
 };
 
+/** register columns — every one sorts, filters, moves and freezes through the shared grid */
+const COLS: GridCol[] = [
+  { key: 'code', label: 'Code', w: 100 },
+  { key: 'name', label: 'Legal name', w: 230 },
+  { key: 'country', label: 'Country', w: 96 },
+  { key: 'currency', label: 'CCY', w: 80 },
+  { key: 'parent', label: 'Parent', w: 100 },
+  { key: 'ownership', label: 'Own %', w: 92, num: true, align: 'right' },
+  { key: 'gaap', label: 'GAAP', w: 104 },
+  { key: 'status', label: 'Status', w: 112 },
+];
+
 export default function LegalEntityMaster() {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState<string | null>('FC-020');
@@ -40,6 +53,7 @@ export default function LegalEntityMaster() {
     (e.code + e.name + e.country + e.currency).toLowerCase().includes(q.toLowerCase()),
   );
   const selected = ENTITIES.find((e) => e.code === sel) ?? filtered[0];
+  const g = useGrid<Entity>('le-master', COLS, filtered, (e, k) => e[k as keyof Entity], { defFreeze: 'code', rowKey: (e) => e.code });
 
   return (
     <div className="p-8 grid lg:grid-cols-[1fr_360px] gap-6">
@@ -71,43 +85,32 @@ export default function LegalEntityMaster() {
           <span className="text-[11px] text-ink-400 pr-2">{filtered.length} results</span>
         </div>
 
-        <div className="rounded-2xl bg-surface-card shadow-neu overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="rounded-2xl bg-surface-card shadow-neu overflow-auto">
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit', tableLayout: 'fixed' }}>
             <thead>
-              <tr className="text-[10px] uppercase tracking-wider text-ink-400 bg-surface-card2">
-                <th className="text-left px-4 py-2">Code</th>
-                <th className="text-left px-4 py-2">Legal name</th>
-                <th className="text-left px-4 py-2">Country</th>
-                <th className="text-left px-4 py-2">CCY</th>
-                <th className="text-left px-4 py-2">Parent</th>
-                <th className="text-right px-4 py-2">Own %</th>
-                <th className="text-left px-4 py-2">GAAP</th>
-                <th className="text-left px-4 py-2">Status</th>
-              </tr>
+              <GridHead g={g} />
             </thead>
             <tbody>
-              {filtered.map((e) => (
-                <tr
-                  key={e.code}
-                  onClick={() => setSel(e.code)}
-                  className={`border-t border-surface-line/40 cursor-pointer hover:bg-surface-soft ${
-                    sel === e.code ? 'bg-brand-500/5' : ''
-                  }`}
-                >
-                  <td className="px-4 py-2 font-mono text-[12px] text-ink-700">{e.code}</td>
-                  <td className="px-4 py-2 text-ink-900">{e.name}</td>
-                  <td className="px-4 py-2 text-ink-600">{e.country}</td>
-                  <td className="px-4 py-2 text-ink-600">{e.currency}</td>
-                  <td className="px-4 py-2 font-mono text-[12px] text-ink-500">{e.parent}</td>
-                  <td className="px-4 py-2 text-right text-ink-700 tabular-nums">{e.ownership.toFixed(0)}%</td>
-                  <td className="px-4 py-2 text-ink-600">{e.gaap}</td>
-                  <td className="px-4 py-2">
-                    <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${STATUS_TONE[e.status]}`}>
-                      {e.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {g.rows.map((e) => {
+                const bg = sel === e.code ? '#EEF3FE' : '#fff';
+                return (
+                  <tr key={e.code} onClick={() => setSel(e.code)} style={{ cursor: 'pointer', fontSize: '12.5px' }}>
+                    {g.cols.map((c) => (
+                      <td key={c.key} style={g.td(c, bg)}>
+                        {c.key === 'status' ? (
+                          <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${STATUS_TONE[e.status]}`}>{e.status}</span>
+                        ) : c.key === 'ownership' ? (
+                          <span className="text-ink-700 tabular-nums">{e.ownership.toFixed(0)}%</span>
+                        ) : (
+                          <Clip g={g} rk={e.code} ck={c.key} style={c.key === 'code' || c.key === 'parent' ? { fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '12px' } : undefined}>
+                            {String(e[c.key as keyof Entity])}
+                          </Clip>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

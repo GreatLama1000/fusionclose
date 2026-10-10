@@ -1,5 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useApp } from '../state/AppContext';
+import { GridCol, GridHead, useGrid } from '../components/grid/Grid';
+import { PanelFooter, SidePanel } from '../components/SidePanel';
 
 /**
  * Engagement Setup — ported from docs/design/Fusion Close.dc.html,
@@ -113,9 +115,6 @@ const LE_DATA: string[][] = [
   ['JV01', 'Nordic JV AS', 'US01', 'Joint venture', 'Norway', '50%', '—', '50%', '—', '50%', 'Equity method', '—', 'NOK', 'NOK', 'USD', 'LCFC', '31 Dec', 'NGAAP (Local)', 'IFRS', '15 Feb 2021', '—'],
   ['ES01', 'Iberia SL (disposed)', 'EU-SUB', 'Former subsidiary', 'Spain', '0%', '—', '0%', '—', '—', 'Deconsolidated', '—', 'EUR', 'EUR', 'USD', '—', '31 Dec', 'PGC (Local)', 'IFRS', '03 May 2017', '30 Apr 2026'],
 ];
-
-const fieldKey = (label: string) =>
-  label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 
 /* ---------------------- bulk structure upload ---------------------- */
 
@@ -254,49 +253,10 @@ function StructureUpload({
   const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(35,44,66,.4)',
-        backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px',
-      }}
+    <SidePanel
+      id="upload-le-structure" title="Upload legal entity structure" onClose={onClose} width={500}
+      subtitle="Select or drag & drop your completed template — the entities are checked before they are added to the Legal Entity Master."
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%', maxWidth: '560px', maxHeight: '88vh', overflow: 'auto', background: '#ECEFF6',
-          border: '1px solid rgba(255,255,255,.85)', borderRadius: '20px',
-          boxShadow: '16px 16px 44px rgba(45,54,80,.42),-8px -8px 24px rgba(255,255,255,.55)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '20px 22px', borderBottom: '1px solid #D9DEE9' }}>
-          <span
-            style={{
-              flex: 'none', width: '44px', height: '44px', borderRadius: '12px',
-              background: 'linear-gradient(150deg,#3B82F6,#2563EB)', display: 'flex',
-              alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(37,99,235,.45)',
-            }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />
-            </svg>
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '16.5px', fontWeight: 700, color: '#232C42' }}>Upload legal entity structure</div>
-            <div style={{ fontSize: '12px', color: '#7A84A0' }}>Select or drag &amp; drop your completed template</div>
-          </div>
-          <button
-            type="button" className="fc-h fc-btn" onClick={onClose} aria-label="Close"
-            style={{ width: '30px', height: '30px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A84A0' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M6 6l12 12M18 6 6 18" />
-            </svg>
-          </button>
-        </div>
-
-        <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {/* drop zone */}
           <div
             onDragOver={(e) => { e.preventDefault(); setDropActive(true); }}
@@ -431,7 +391,7 @@ function StructureUpload({
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <PanelFooter>
             <div style={{ flex: 1 }} />
             <button
               type="button" className="fc-h fc-btn" onClick={onClose}
@@ -453,10 +413,8 @@ function StructureUpload({
             >
               {parsed && parsed.rows.length ? `Import ${parsed.rows.length} entit${parsed.rows.length === 1 ? 'y' : 'ies'}` : 'Import'}
             </button>
-          </div>
-        </div>
-      </div>
-    </div>
+          </PanelFooter>
+    </SidePanel>
   );
 }
 
@@ -1047,16 +1005,9 @@ function LegalEntityMaster() {
   const [search, setSearch] = useState('');
   const [sel, setSel] = useState<number[]>([]);
   const [full, setFull] = useState(false);
-  const [filters, setFilters] = useState<Record<number, string>>({});
-  const [menuCi, setMenuCi] = useState<number | null>(null);
-  const [colNames, setColNames] = useState<Record<number, string>>({});
-  const [freeze, setFreeze] = useState(1);
-  const [renameCi, setRenameCi] = useState<number | null>(null);
-  const [renameVal, setRenameVal] = useState('');
   const [orgOpen, setOrgOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
 
-  const colLabel = (ci: number) => colNames[ci] ?? LE_COLS[ci];
 
   /** distinct existing values power the dropdown columns */
   const optionsFor = (ci: number) =>
@@ -1074,7 +1025,7 @@ function LegalEntityMaster() {
     });
     // a new row must be visible to be filled in
     setSearch('');
-    setFilters({});
+    g.setFilters({});
   };
 
   const deleteSelected = () => {
@@ -1091,30 +1042,17 @@ function LegalEntityMaster() {
 
   const rows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return data.map((r, i) => ({ r, i })).filter(({ r }) => {
-      if (q && !r.join(' ').toLowerCase().includes(q)) return false;
-      return Object.entries(filters).every(
-        ([ci, v]) => !v.trim() || String(r[Number(ci)]).toLowerCase().includes(v.trim().toLowerCase()),
-      );
-    });
-  }, [data, search, filters]);
+    return data.map((r, i) => ({ r, i })).filter(({ r }) => !q || r.join(' ').toLowerCase().includes(q));
+  }, [data, search]);
 
-  const filterChips = Object.entries(filters).filter(([, v]) => v.trim());
-  const allChecked = rows.length > 0 && rows.every(({ i }) => sel.includes(i));
+  /* shared table kit — ⋮ menu, filters, sort, freeze, drag to move, resize */
+  const leCols = useMemo<GridCol[]>(() => LE_COLS.map((label, ci) => ({ key: `c${ci}`, label, w: ci === 1 ? 210 : 132 })), []);
+  const g = useGrid<{ r: string[]; i: number }>('eng-le-structure', leCols, rows, (x, k) => x.r[Number(k.slice(1))] ?? '', {
+    lead: 38, defFreeze: 'c1', rowKey: (x) => String(x.i),
+  });
 
-  /** frozen columns render sticky; offsets are cumulative fixed widths */
-  const COL_W = 132;
-  const isFrozen = (ci: number) => ci <= freeze;
-  const stickyCell = (ci: number, z: number, bg: string): React.CSSProperties =>
-    isFrozen(ci)
-      ? {
-          position: 'sticky',
-          left: `${38 + ci * COL_W}px`,
-          zIndex: z,
-          background: bg,
-          ...(ci === freeze ? { boxShadow: '6px 0 10px -8px rgba(60,70,100,.35)' } : null),
-        }
-      : {};
+  const allChecked = g.rows.length > 0 && g.rows.every(({ i }) => sel.includes(i));
+
 
   return (
     <section
@@ -1194,34 +1132,10 @@ function LegalEntityMaster() {
         </button>
       </div>
 
-      {/* active filter chips */}
-      {filterChips.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap', marginBottom: '12px' }}>
-          <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '.6px', textTransform: 'uppercase', color: '#9AA3BA' }}>
-            Filters
-          </span>
-          {filterChips.map(([ci, v]) => (
-            <span
-              key={ci}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700,
-                color: '#3B5BDB', background: 'rgba(59,130,246,.1)', border: '1px solid rgba(59,130,246,.3)',
-                borderRadius: '999px', padding: '4px 10px',
-              }}
-            >
-              {colLabel(Number(ci))}: “{v.trim()}”
-              <button
-                type="button" className="fc-btn"
-                onClick={() => setFilters((f) => { const n = { ...f }; delete n[Number(ci)]; return n; })}
-                style={{ color: '#7A84A0', fontSize: '12px', lineHeight: 1 }}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          <button type="button" className="fc-btn" onClick={() => setFilters({})} style={{ fontSize: '11px', fontWeight: 700, color: '#7A84A0' }}>
-            Clear all
-          </button>
+      {g.hasFilters && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '10px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, color: '#3B5BDB' }}>{g.rows.length} of {g.total} entities shown — filtered or sorted from the column ⋮ menus</span>
+          <button type="button" className="fc-btn" onClick={g.clearAll} style={{ fontSize: '11px', fontWeight: 700, color: '#7A84A0' }}>Clear filters</button>
         </div>
       )}
 
@@ -1240,110 +1154,41 @@ function LegalEntityMaster() {
 
       {/* grid */}
       <div style={{ overflow: 'auto', border: '1px solid #DCE0EB', borderRadius: '12px', flex: 1, minHeight: 0 }}>
-        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit' }}>
+        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit', tableLayout: 'fixed' }}>
           <thead>
-            <tr>
-              <th
-                style={{
-                  position: 'sticky', left: 0, top: 0, zIndex: 7, width: '38px', textAlign: 'center',
-                  padding: '7px 0', background: '#E4E8F0', borderBottom: '1px solid #CBD2E0', borderTop: '2px solid #1B3A5C',
-                }}
-              >
+            <GridHead
+              g={g}
+              lead={(
                 <input
                   type="checkbox"
                   checked={allChecked}
-                  onChange={() => setSel(allChecked ? [] : rows.map(({ i }) => i))}
+                  aria-label="Select all entities"
+                  onChange={() => setSel(allChecked ? [] : g.rows.map(({ i }) => i))}
                   style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#3B5BDB' }}
                 />
-              </th>
-              {LE_COLS.map((_, ci) => (
-                <th
-                  key={ci}
-                  title="Click ⋮ for filter, rename, freeze"
-                  style={{
-                    position: 'sticky', top: 0, zIndex: isFrozen(ci) ? 6 : 5,
-                    padding: '7px 10px', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere',
-                    lineHeight: 1.25, verticalAlign: 'top', textAlign: 'left',
-                    color: filters[ci]?.trim() ? '#3B5BDB' : '#1B3A5C',
-                    borderBottom: '1px solid #CBD2E0', borderTop: '2px solid #1B3A5C',
-                    fontSize: '9px', letterSpacing: '.4px', textTransform: 'uppercase', fontWeight: 700,
-                    background: '#E4E8F0', width: `${COL_W}px`, minWidth: `${COL_W}px`,
-                    ...stickyCell(ci, 6, '#E4E8F0'),
-                  }}
-                >
-                  <span style={{ display: 'flex', alignItems: 'flex-start', gap: '5px', width: '100%' }}>
-                    {renameCi === ci ? (
-                      <input
-                        value={renameVal}
-                        autoFocus
-                        onChange={(e) => setRenameVal(e.target.value)}
-                        onBlur={() => { setColNames((c) => ({ ...c, [ci]: renameVal || LE_COLS[ci] })); setRenameCi(null); }}
-                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-                        style={{
-                          width: '92px', background: '#fff', border: '1px solid #3B5BDB', borderRadius: '5px',
-                          font: 'inherit', fontSize: '10px', fontWeight: 700, textTransform: 'uppercase',
-                          color: '#232C42', padding: '2px 5px',
-                        }}
-                      />
-                    ) : (
-                      <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{colLabel(ci)}</span>
-                    )}
-                    <button
-                      type="button" className="fc-btn"
-                      onClick={() => setMenuCi(menuCi === ci ? null : ci)}
-                      style={{ color: '#9AA3BA', fontSize: '11px', lineHeight: 1, padding: '1px 2px', borderRadius: '4px' }}
-                    >
-                      ⋮
-                    </button>
-                  </span>
-                  <span
-                    style={{
-                      display: 'block', marginTop: '2px', fontFamily: 'ui-monospace,Menlo,monospace',
-                      fontSize: '8.5px', fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#8A93AB',
-                    }}
-                  >
-                    {fieldKey(colLabel(ci))}
-                  </span>
-                </th>
-              ))}
-            </tr>
+              )}
+            />
           </thead>
           <tbody>
-            {rows.map(({ r, i }) => {
+            {g.rows.map(({ r, i }) => {
               const on = sel.includes(i);
               const isNew = added.includes(i);
+              const rowBg = on ? '#E2E8FB' : isNew ? '#EAF4EC' : '#ECEFF6';
               return (
-                <tr
-                  key={i}
-                  style={
-                    on
-                      ? { background: 'rgba(59,130,246,.06)' }
-                      : isNew
-                        ? { background: 'rgba(34,197,94,.07)' }
-                        : undefined
-                  }
-                >
-                  <td
-                    style={{
-                      position: 'sticky', left: 0, zIndex: 2, width: '38px', textAlign: 'center',
-                      padding: '4px 0', borderBottom: '1px solid #DCE0EB', background: on ? '#E2E8FB' : '#ECEFF6',
-                    }}
-                  >
+                <tr key={i}>
+                  <td style={g.leadStyle(rowBg, { background: rowBg })}>
                     <input
                       type="checkbox"
                       checked={on}
+                      aria-label="Select entity"
                       onChange={() => setSel((s) => (s.includes(i) ? s.filter((x) => x !== i) : [...s, i]))}
                       style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#3B5BDB' }}
                     />
                   </td>
-                  {r.map((v, ci) => {
+                  {g.cols.map((c) => {
+                    const ci = Number(c.key.slice(1));
+                    const v = r[ci] ?? '';
                     const ft = LE_TYPES[ci] ?? 'text';
-                    const frozen = isFrozen(ci);
-                    const base: React.CSSProperties = {
-                      padding: '5px 10px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      borderBottom: '1px solid #E7EAF2', fontSize: '10.5px',
-                      width: `${COL_W}px`, maxWidth: `${COL_W}px`,
-                    };
                     const tone: React.CSSProperties =
                       ci === 0 ? { fontWeight: 700, color: '#232C42' }
                         : ci === 1 ? { color: '#333D55', fontWeight: 600 }
@@ -1352,29 +1197,24 @@ function LegalEntityMaster() {
                               : { color: '#65708C' };
                     const editable = ft !== 'auto';
                     const isEditing = edit?.ri === i && edit?.ci === ci;
-                    const cellBg = on ? '#E2E8FB' : isNew ? '#EAF4EC' : '#ECEFF6';
+                    // field-type tint, unless the row is selected / new
+                    const bg = on || isNew ? rowBg : TYPE_TINT[ft] ?? rowBg;
 
                     const commit = () => setEdit(null);
                     const step = (delta: number) => {
-                      // Tab / Enter walk to the next editable column
-                      let next = ci + delta;
-                      while (next >= 0 && next < LE_COLS.length && LE_TYPES[next] === 'auto') next += delta;
-                      setEdit(next >= 0 && next < LE_COLS.length ? { ri: i, ci: next } : null);
+                      // Tab walks to the next editable column, in the order shown
+                      const order = g.cols.map((x) => Number(x.key.slice(1)));
+                      let at = order.indexOf(ci) + delta;
+                      while (at >= 0 && at < order.length && LE_TYPES[order[at]] === 'auto') at += delta;
+                      setEdit(at >= 0 && at < order.length ? { ri: i, ci: order[at] } : null);
                     };
 
                     return (
                       <td
-                        key={ci}
+                        key={c.key}
                         onClick={() => { if (editable && !isEditing) setEdit({ ri: i, ci }); }}
                         title={editable ? 'Click to edit' : 'Auto-computed'}
-                        style={{
-                          ...base,
-                          ...tone,
-                          ...(frozen ? null : { background: TYPE_TINT[ft] }),
-                          ...stickyCell(ci, 1, cellBg),
-                          ...(isEditing ? { padding: '2px 4px', overflow: 'visible' } : null),
-                          ...(editable ? { cursor: 'text' } : null),
-                        }}
+                        style={{ ...g.td(c, bg, { background: bg }), fontSize: '10.5px', ...tone, ...(isEditing ? { padding: '0 4px', overflow: 'visible' } : null), ...(editable ? { cursor: 'text' } : null) }}
                       >
                         {isEditing ? (
                           ft === 'dropdown' ? (
@@ -1404,9 +1244,16 @@ function LegalEntityMaster() {
                               style={EDIT_CELL}
                             />
                           )
-                        ) : (
-                          v || (isNew ? <span style={{ color: '#A6AEC2', fontStyle: 'italic' }}>—</span> : '')
-                        )}
+                        ) : v ? (
+                          // one line with an ellipsis; double-click shows the full value (single click edits)
+                          <span onDoubleClick={(e) => { e.stopPropagation(); g.toggleOpen(String(i), c.key); }}
+                            title={g.isOpen(String(i), c.key) ? undefined : `${v}\n— double-click to show in full`}
+                            style={g.isOpen(String(i), c.key)
+                              ? { display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.45, padding: '7px 0' }
+                              : { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {v}
+                          </span>
+                        ) : (isNew ? <span style={{ color: '#A6AEC2', fontStyle: 'italic' }}>—</span> : '')}
                       </td>
                     );
                   })}
@@ -1416,55 +1263,6 @@ function LegalEntityMaster() {
           </tbody>
         </table>
       </div>
-
-      {/* column menu */}
-      {menuCi !== null && (
-        <>
-          <div style={{ position: 'fixed', inset: 0, zIndex: 900 }} onClick={() => setMenuCi(null)} />
-          <div
-            style={{
-              position: 'absolute', right: '28px', top: '120px', zIndex: 901, width: '240px',
-              background: '#ECEFF6', border: '1px solid #D9DEE9', borderRadius: '12px',
-              boxShadow: '0 18px 40px -14px rgba(50,60,90,.45)', padding: '6px',
-              display: 'flex', flexDirection: 'column',
-            }}
-          >
-            <div style={{ padding: '7px 10px 8px', borderBottom: '1px solid #D9DEE9', marginBottom: '4px' }}>
-              <span style={{ fontSize: '9.5px', letterSpacing: '.6px', textTransform: 'uppercase', color: '#9AA3BA', fontWeight: 700 }}>
-                Column
-              </span>
-              <div style={{ fontSize: '12.5px', fontWeight: 700, color: '#232C42' }}>{colLabel(menuCi)}</div>
-            </div>
-            <div style={{ padding: '4px 8px 8px' }}>
-              <label style={{ display: 'block', fontSize: '9.5px', letterSpacing: '.5px', textTransform: 'uppercase', color: '#9AA3BA', fontWeight: 700, marginBottom: '4px' }}>
-                Filter
-              </label>
-              <input
-                value={filters[menuCi] ?? ''}
-                onChange={(e) => setFilters((f) => ({ ...f, [menuCi]: e.target.value }))}
-                placeholder="Contains…"
-                style={{ ...INSET_INPUT, height: '30px', borderRadius: '7px', fontSize: '12px', padding: '0 9px' }}
-              />
-            </div>
-            {[
-              { icon: '✎', label: 'Rename column', on: () => { setRenameCi(menuCi); setRenameVal(colLabel(menuCi)); setMenuCi(null); } },
-              { icon: '‖', label: 'Freeze up to this column', on: () => { setFreeze(menuCi); setMenuCi(null); } },
-              { icon: '✕', label: 'Unfreeze all columns', on: () => { setFreeze(-1); setMenuCi(null); } },
-            ].map((it) => (
-              <button
-                key={it.label}
-                type="button"
-                className="fc-btn"
-                onClick={it.on}
-                style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '12.5px', color: '#333D55', padding: '8px 10px', borderRadius: '7px' }}
-              >
-                <span style={{ fontSize: '12px' }}>{it.icon}</span>
-                {it.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
 
       {orgOpen && <OrgChart data={data} onClose={() => setOrgOpen(false)} />}
 
@@ -1480,7 +1278,7 @@ function LegalEntityMaster() {
               return next;
             });
             setSearch('');
-            setFilters({});
+            g.setFilters({});
             setSel([]);
           }}
         />

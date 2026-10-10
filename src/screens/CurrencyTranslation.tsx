@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Clip, GridCol, GridHead, GrowText, useGrid } from '../components/grid/Grid';
 
 /**
  * Currency Translation — ported from docs/design/Fusion Close.dc.html,
@@ -104,18 +105,6 @@ const CARD_INSET: React.CSSProperties = {
 
 const SECTION_LABEL: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, letterSpacing: '.6px', textTransform: 'uppercase', color: '#65708C',
-};
-
-const TH: React.CSSProperties = {
-  padding: '7px 10px', textAlign: 'left', verticalAlign: 'top', color: '#1B3A5C',
-  borderBottom: '1px solid #CBD2E0', borderTop: '2px solid #1B3A5C', fontSize: '9px',
-  letterSpacing: '.4px', textTransform: 'uppercase', fontWeight: 700, background: '#E4E8F0',
-  position: 'sticky', top: 0, zIndex: 5, whiteSpace: 'normal', lineHeight: 1.25,
-};
-
-const TD: React.CSSProperties = {
-  padding: '5px 10px', borderBottom: '1px solid #E7EAF2', fontSize: '10.5px',
-  color: '#65708C', whiteSpace: 'nowrap',
 };
 
 /* ============================== screen ============================== */
@@ -225,23 +214,66 @@ export default function CurrencyTranslation() {
     setRmDirty(true);
   };
 
-  const COLS = [
-    { label: 'Legal entity' }, { label: 'Business unit' },
-    { label: 'COA', info: 'Local chart of account code' }, { label: 'Account name' },
-    { label: 'LE type', align: 'center' as const, info: 'RCFC — recording currency differs from the functional currency. LCFC — the local recording currency is the functional currency.' },
-    { label: 'Class', info: 'Monetary or non-monetary. Shown for RCFC entities only, where the classification drives the remeasurement rate. Click a value to switch it.' },
-    { label: 'LC', align: 'center' as const, info: 'Recording currency of the entity' },
-    { label: 'Net amount (LC)', align: 'right' as const, strong: true, info: 'Adjusted trial balance in the recording currency, 000s' },
-    { label: 'LC → FC rate', align: 'right' as const },
-    { label: 'Amount (FC)', align: 'right' as const, info: 'Remeasured into the functional currency' },
-    { label: 'RMGL', align: 'right' as const, info: 'Remeasurement gain or loss on monetary items of RCFC entities, recognised in profit or loss. Right-click to route it to a line item.' },
-    { label: 'P&L destination', info: 'RMGL goes to Other income by default; RMGL arising on borrowings goes to Finance cost. Right-click the amount or the destination to route it elsewhere.' },
-    { label: 'FC → RC rate', align: 'right' as const },
-    { label: 'Amount (RC)', align: 'right' as const, strong: true, info: 'Translated into the reporting currency, USD 000s' },
-    { label: 'CTA', align: 'right' as const, info: 'Currency translation adjustment taken to other comprehensive income' },
-    { label: 'Parent share', align: 'right' as const, info: 'Parent’s share of the CTA only' },
-    { label: 'NCI share', align: 'right' as const, info: 'Non-controlling interests’ share of the CTA only' },
+  const COLS: GridCol[] = [
+    { key: 'le', label: 'Legal entity', w: 210 },
+    { key: 'bu', label: 'Business unit', w: 130 },
+    { key: 'coa', label: 'COA', w: 84, info: 'Local chart of account code' },
+    { key: 'acct', label: 'Account name', w: 190 },
+    { key: 'type', label: 'LE type', w: 96, align: 'center', info: 'RCFC — recording currency differs from the functional currency. LCFC — the local recording currency is the functional currency.' },
+    { key: 'cls', label: 'Class', w: 122, info: 'Monetary or non-monetary. Shown for RCFC entities only, where the classification drives the remeasurement rate. Click a value to switch it.' },
+    { key: 'lc', label: 'LC', w: 70, align: 'center', info: 'Recording currency of the entity' },
+    { key: 'net', label: 'Net amount (LC)', w: 128, align: 'right', num: true, info: 'Adjusted trial balance in the recording currency, 000s' },
+    { key: 'rLc', label: 'LC → FC rate', w: 112, align: 'right', num: true },
+    { key: 'fc', label: 'Amount (FC)', w: 118, align: 'right', num: true, info: 'Remeasured into the functional currency' },
+    { key: 'rmgl', label: 'RMGL', w: 104, align: 'right', num: true, info: 'Remeasurement gain or loss on monetary items of RCFC entities, recognised in profit or loss. Right-click to route it to a line item.' },
+    { key: 'dest', label: 'P&L destination', w: 150, info: 'RMGL goes to Other income by default; RMGL arising on borrowings goes to Finance cost. Right-click the amount or the destination to route it elsewhere.' },
+    { key: 'rFc', label: 'FC → RC rate', w: 112, align: 'right', num: true },
+    { key: 'rc', label: 'Amount (RC)', w: 124, align: 'right', num: true, info: 'Translated into the reporting currency, USD 000s' },
+    { key: 'cta', label: 'CTA', w: 104, align: 'right', num: true, info: 'Currency translation adjustment taken to other comprehensive income' },
+    { key: 'par', label: 'Parent share', w: 112, align: 'right', num: true, info: 'Parent’s share of the CTA only' },
+    { key: 'nci', label: 'NCI share', w: 104, align: 'right', num: true, info: 'Non-controlling interests’ share of the CTA only' },
   ];
+
+  type Rec = (typeof recs)[number];
+  /** what each column sorts and filters on */
+  const recVal = (r: Rec, k: string): string | number => {
+    switch (k) {
+      case 'le': return `${r.e.code} · ${r.e.name}`;
+      case 'bu': return r.e.bus[r.si % r.e.bus.length];
+      case 'coa': return r.sp.code;
+      case 'acct': return r.sp.name;
+      case 'type': return r.e.rcfc ? 'RCFC' : 'LCFC';
+      case 'cls': return !r.e.rcfc ? '—' : r.isPl ? 'P&L' : r.cls === 'mon' ? 'Monetary' : 'Non-monetary';
+      case 'lc': return r.e.lc;
+      case 'net': return r.net;
+      case 'rLc': return r.rLc;
+      case 'fc': return r.fcAmt;
+      case 'rmgl': return r.rmgl;
+      case 'dest': return r.rmgl ? r.dest : '—';
+      case 'rFc': return r.rFc;
+      case 'rc': return r.rcAmt;
+      case 'cta': return r.cta;
+      case 'par': return r.cta * (1 - r.e.nci);
+      default: return r.cta * r.e.nci;
+    }
+  };
+  const g = useGrid<Rec>('fx-translation', COLS, recs, recVal, { defFreeze: 'le', rowKey: (r) => r.key });
+
+  const RM_COLS: GridCol[] = [
+    { key: 'type', label: 'Rate type', w: 150 },
+    { key: 'pair', label: 'Currency pair', w: 128 },
+    { key: 'leg', label: 'Leg', w: 96, info: 'Derived from the currency pair' },
+    { key: 'basis', label: 'Period basis', w: 130 },
+    { key: 'date', label: 'Effective date', w: 136 },
+    { key: 'ident', label: 'Identifier', w: 100, info: 'Derived from the rate type and period' },
+    { key: 'event', label: 'Event / basis', w: 240 },
+    { key: 'rate', label: 'Rate', w: 110, align: 'right', num: true },
+    { key: 'src', label: 'Source', w: 140 },
+    { key: 'status', label: 'Status', w: 104 },
+  ];
+  const rg = useGrid<Rate>('fx-rate-master', RM_COLS, rmList, (r, k) => (
+    k === 'leg' ? pairLeg(r.pair) : k === 'ident' ? identOf(r) : k === 'status' ? (r.rate && r.event ? 'Ready' : 'Incomplete') : String((r as Record<string, unknown>)[k] ?? '')
+  ), { rowKey: (r) => r.id });
 
   const scopeLabel = scope === 'all'
     ? `${ENTS.length} entities · ${ENTS.filter((e) => e.rcfc).length} RCFC · reporting currency USD`
@@ -405,88 +437,85 @@ export default function CurrencyTranslation() {
         </div>
 
         <div style={{ overflow: 'auto', border: '1px solid #DCE0EB', borderRadius: '12px', flex: 1, minHeight: 0, background: '#ECEFF6' }}>
-          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit' }}>
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit', tableLayout: 'fixed' }}>
             <thead>
-              <tr>
-                {COLS.map((c) => (
-                  <th key={c.label} style={{ ...TH, textAlign: c.align ?? 'left' }} title={c.info}>
-                    <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: '4px' }}>
-                      {c.label}
-                      {c.info && (
-                        <span style={{ flex: 'none', cursor: 'help', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '12px', height: '12px', borderRadius: '50%', background: '#3B5BDB', color: '#fff', fontSize: '8px', fontWeight: 700, fontStyle: 'italic', lineHeight: 1 }}>i</span>
-                      )}
-                    </span>
-                  </th>
-                ))}
-              </tr>
+              <GridHead g={g} />
             </thead>
             <tbody>
-              {recs.map((r) => (
-                <tr key={r.key} className="fc-h">
-                  <td style={{ ...TD, fontWeight: 700, color: '#232C42' }}>{r.e.code} · {r.e.name}</td>
-                  <td style={TD}>{r.e.bus[r.si % r.e.bus.length]}</td>
-                  <td style={{ ...TD, color: '#0F766E', fontWeight: 700 }}>{r.sp.code}</td>
-                  <td style={{ ...TD, color: '#333D55' }}>{r.sp.name}</td>
-                  <td style={{ ...TD, textAlign: 'center' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: '17px', padding: '0 7px', borderRadius: '5px', fontSize: '9px', fontWeight: 700, letterSpacing: '.3px', color: r.e.rcfc ? '#B45309' : '#65708C', background: r.e.rcfc ? 'rgba(245,158,11,.14)' : 'rgba(148,163,184,.16)' }}>
-                      {r.e.rcfc ? 'RCFC' : 'LCFC'}
-                    </span>
-                  </td>
-                  <td style={TD}>
-                    {r.e.rcfc ? (
+              {g.rows.map((r) => {
+                const routeMenu = (e: React.MouseEvent) => { if (r.rmgl) { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, key: r.key, label: `${r.sp.name} · ${r.e.code}` }); } };
+                const amt = (v: number, strong?: boolean): React.CSSProperties => ({ fontVariantNumeric: 'tabular-nums', ...(strong ? { color: '#232C42', fontWeight: 700 } : null), ...(v < 0 ? { color: '#B42318' } : null) });
+                const sign = (v: number) => (!v ? '#B8BFCF' : N(v, 1).charAt(0) === '(' ? '#B42318' : '#15803D');
+                const cell = (k: string): React.ReactNode => {
+                  switch (k) {
+                    case 'le': return <Clip g={g} rk={r.key} ck={k} style={{ fontWeight: 700, color: '#232C42' }}>{r.e.code} · {r.e.name}</Clip>;
+                    case 'bu': return <Clip g={g} rk={r.key} ck={k}>{r.e.bus[r.si % r.e.bus.length]}</Clip>;
+                    case 'coa': return <span style={{ color: '#0F766E', fontWeight: 700 }}>{r.sp.code}</span>;
+                    case 'acct': return <Clip g={g} rk={r.key} ck={k} style={{ color: '#333D55' }}>{r.sp.name}</Clip>;
+                    case 'type': return (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: '17px', padding: '0 7px', borderRadius: '5px', fontSize: '9px', fontWeight: 700, letterSpacing: '.3px', color: r.e.rcfc ? '#B45309' : '#65708C', background: r.e.rcfc ? 'rgba(245,158,11,.14)' : 'rgba(148,163,184,.16)' }}>
+                        {r.e.rcfc ? 'RCFC' : 'LCFC'}
+                      </span>
+                    );
+                    case 'cls': return r.e.rcfc ? (
                       <button
                         type="button" className="fc-btn"
                         onClick={() => { if (r.clickable) setCls((m) => ({ ...m, [r.key]: (m[r.key] ?? r.sp.cls) === 'mon' ? 'non' : 'mon' })); }}
                         title={r.clickable ? `${r.lcBasis} — click to switch classification` : r.lcBasis}
                         style={{
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', height: '17px', padding: '0 7px',
-                          borderRadius: '5px', fontSize: '9px', fontWeight: 700, letterSpacing: '.3px',
-                          cursor: r.clickable ? 'pointer' : 'default',
+                          borderRadius: '5px', fontSize: '9px', fontWeight: 700, letterSpacing: '.3px', cursor: r.clickable ? 'pointer' : 'default',
                           color: r.cls === 'mon' ? '#2C4BD1' : r.cls === 'non' ? '#B42318' : '#65708C',
                           background: r.cls === 'mon' ? 'rgba(44,75,209,.12)' : r.cls === 'non' ? 'rgba(180,35,24,.1)' : 'rgba(148,163,184,.16)',
                         }}
                       >
                         {r.isPl ? 'P&L' : r.cls === 'mon' ? 'Monetary' : 'Non-monetary'}
                       </button>
-                    ) : '—'}
-                  </td>
-                  <td style={{ ...TD, textAlign: 'center' }}>{r.e.lc}</td>
-                  <td style={{ ...TD, textAlign: 'right', background: 'rgba(255,255,255,.5)', color: '#232C42', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{N(r.net)}</td>
-                  <td style={{ ...TD, textAlign: 'right', color: '#7A84A0', fontVariantNumeric: 'tabular-nums' }} title={r.lcBasis}>{rateFmt(r.rLc)}</td>
-                  <td style={{ ...TD, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{N(r.fcAmt)}</td>
-                  <td
-                    onContextMenu={(e) => { if (r.rmgl) { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, key: r.key, label: `${r.sp.name} · ${r.e.code}` }); } }}
-                    style={{ ...TD, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !r.rmgl ? '#B8BFCF' : N(r.rmgl, 1).charAt(0) === '(' ? '#B42318' : '#15803D', cursor: r.rmgl ? 'context-menu' : 'default' }}
-                    title={r.rmgl ? 'Right-click to route this RMGL to another line item' : undefined}
-                  >
-                    {r.rmgl ? N(r.rmgl, 1) : '—'}
-                  </td>
-                  <td
-                    onContextMenu={(e) => { if (r.rmgl) { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, key: r.key, label: `${r.sp.name} · ${r.e.code}` }); } }}
-                    style={{ ...TD, color: r.rmgl ? '#414B62' : '#B8BFCF', cursor: r.rmgl ? 'context-menu' : 'default' }}
-                  >
-                    {r.rmgl ? r.dest : '—'}
-                  </td>
-                  <td style={{ ...TD, textAlign: 'right', color: '#7A84A0', fontVariantNumeric: 'tabular-nums' }} title={r.fcBasis}>{rateFmt(r.rFc)}</td>
-                  <td style={{ ...TD, textAlign: 'right', background: 'rgba(255,255,255,.5)', color: '#232C42', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{N(r.rcAmt)}</td>
-                  <td style={{ ...TD, textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: !r.cta ? '#B8BFCF' : N(r.cta, 1).charAt(0) === '(' ? '#B42318' : '#15803D' }}>{r.cta ? N(r.cta, 1) : '—'}</td>
-                  <td style={{ ...TD, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.cta ? N(r.cta * (1 - r.e.nci), 1) : '—'}</td>
-                  <td style={{ ...TD, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{r.cta && r.e.nci ? N(r.cta * r.e.nci, 1) : '—'}</td>
-                </tr>
-              ))}
-              <tr>
-                {['Total', '', '', '', '', '', '', '', '', ''].map((v, i) => (
-                  <td key={i} style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', fontWeight: 700, color: '#232C42' }}>{v}</td>
-                ))}
-                <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: N(tot.rmgl, 1).charAt(0) === '(' ? '#B42318' : '#15803D' }}>{N(tot.rmgl, 1)}</td>
-                <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0' }} />
-                <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0' }} />
-                <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', textAlign: 'right', fontWeight: 700, color: '#232C42', fontVariantNumeric: 'tabular-nums' }}>{N(tot.rc)}</td>
-                <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: N(tot.cta, 1).charAt(0) === '(' ? '#B42318' : '#15803D' }}>{N(tot.cta, 1)}</td>
-                <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{N(tot.par, 1)}</td>
-                <td style={{ ...TD, background: '#E4E8F0', borderTop: '2px solid #CBD2E0', textAlign: 'right', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{N(tot.nci, 1)}</td>
-              </tr>
+                    ) : '—';
+                    case 'lc': return r.e.lc;
+                    case 'net': return <span style={amt(r.net, true)}>{N(r.net)}</span>;
+                    case 'rLc': return <span title={r.lcBasis} style={{ color: '#7A84A0', fontVariantNumeric: 'tabular-nums' }}>{rateFmt(r.rLc)}</span>;
+                    case 'fc': return <span style={amt(r.fcAmt)}>{N(r.fcAmt)}</span>;
+                    case 'rmgl': return (
+                      <span onContextMenu={routeMenu} title={r.rmgl ? 'Right-click to route this RMGL to another line item' : undefined}
+                        style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: sign(r.rmgl), cursor: r.rmgl ? 'context-menu' : 'default' }}>
+                        {r.rmgl ? N(r.rmgl, 1) : '—'}
+                      </span>
+                    );
+                    case 'dest': return (
+                      <span onContextMenu={routeMenu} style={{ display: 'block', color: r.rmgl ? '#414B62' : '#B8BFCF', cursor: r.rmgl ? 'context-menu' : 'default' }}>
+                        <Clip g={g} rk={r.key} ck={k}>{r.rmgl ? r.dest : '—'}</Clip>
+                      </span>
+                    );
+                    case 'rFc': return <span title={r.fcBasis} style={{ color: '#7A84A0', fontVariantNumeric: 'tabular-nums' }}>{rateFmt(r.rFc)}</span>;
+                    case 'rc': return <span style={amt(r.rcAmt, true)}>{N(r.rcAmt)}</span>;
+                    case 'cta': return <span style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: sign(r.cta) }}>{r.cta ? N(r.cta, 1) : '—'}</span>;
+                    case 'par': return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{r.cta ? N(r.cta * (1 - r.e.nci), 1) : '—'}</span>;
+                    default: return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{r.cta && r.e.nci ? N(r.cta * r.e.nci, 1) : '—'}</span>;
+                  }
+                };
+                return (
+                  <tr key={r.key} style={{ fontSize: '11px', color: '#65708C' }}>
+                    {g.cols.map((c) => (
+                      <td key={c.key} style={g.td(c, c.key === 'net' || c.key === 'rc' ? '#F7F8FB' : '#ECEFF6')}>{cell(c.key)}</td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
+            <tfoot>
+              <tr>
+                {g.cols.map((c, i) => {
+                  const v = c.key === 'rmgl' ? N(tot.rmgl, 1) : c.key === 'rc' ? N(tot.rc) : c.key === 'cta' ? N(tot.cta, 1) : c.key === 'par' ? N(tot.par, 1) : c.key === 'nci' ? N(tot.nci, 1) : i === 0 ? 'Total' : '';
+                  const col = c.key === 'rmgl' || c.key === 'cta' ? (v.charAt(0) === '(' ? '#B42318' : '#15803D') : '#232C42';
+                  return (
+                    <td key={c.key} style={{ ...g.td(c, '#E4E8F0'), position: 'sticky', bottom: 0, zIndex: 3, borderTop: '2px solid #CBD2E0', fontWeight: 700, color: col, fontVariantNumeric: 'tabular-nums', fontSize: '11px' }}>
+                      {v}
+                    </td>
+                  );
+                })}
+              </tr>
+            </tfoot>
           </table>
         </div>
 
@@ -571,32 +600,23 @@ export default function CurrencyTranslation() {
             </div>
 
             <div style={{ flex: 1, minHeight: 0, overflow: 'auto', border: '1px solid #DCE0EB', borderRadius: '12px', background: '#ECEFF6' }}>
-              <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit' }}>
+              <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit', tableLayout: 'fixed' }}>
                 <thead>
-                  <tr>
-                    {[['Rate type', ''], ['Currency pair', ''], ['Leg', 'derived'], ['Period basis', ''], ['Effective date', ''], ['Identifier', 'derived'], ['Event / basis', ''], ['Rate', ''], ['Source', ''], ['Status', '']].map(([h, sub]) => (
-                      <th key={h} style={TH}>
-                        {h}
-                        {sub && <span style={{ display: 'block', marginTop: '2px', fontSize: '8.5px', fontWeight: 600, letterSpacing: '.3px', color: '#9AA3BA', textTransform: 'none' }}>{sub}</span>}
-                      </th>
-                    ))}
-                  </tr>
+                  <GridHead g={rg} />
                 </thead>
                 <tbody>
-                  {rmList.map((r) => {
+                  {rg.rows.map((r) => {
                     const leg = pairLeg(r.pair);
                     const complete = !!r.rate && !!r.event;
-                    const SEL: React.CSSProperties = { height: '26px', borderRadius: '7px', border: '1px solid #CBD2E0', background: '#fff', font: 'inherit', fontSize: '11px', color: '#333D55', padding: '0 6px', cursor: 'pointer' };
+                    const SEL: React.CSSProperties = { maxWidth: '100%', height: '26px', borderRadius: '7px', border: '1px solid #CBD2E0', background: '#fff', font: 'inherit', fontSize: '11px', color: '#333D55', padding: '0 6px', cursor: 'pointer' };
                     const INP: React.CSSProperties = { height: '26px', width: '100%', boxSizing: 'border-box', borderRadius: '7px', border: '1px solid #CBD2E0', background: '#fff', font: 'inherit', fontSize: '11px', color: '#333D55', padding: '0 7px', outline: 'none' };
-                    return (
-                      <tr key={r.id} className="fc-h">
-                        <td style={TD}><select value={r.type} onChange={(e) => patchRate(r.id, 'type', e.target.value)} style={SEL}>{TYPE_OPTS.map((o) => <option key={o}>{o}</option>)}</select></td>
-                        <td style={TD}><select value={r.pair} onChange={(e) => patchRate(r.id, 'pair', e.target.value)} style={SEL}>{PAIR_OPTS.map((o) => <option key={o}>{o}</option>)}</select></td>
-                        <td style={TD}>
-                          <span style={{ fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', color: leg === 'LC → FC' ? '#B45309' : '#2563EB', background: leg === 'LC → FC' ? 'rgba(245,158,11,.14)' : 'rgba(59,130,246,.12)' }}>{leg}</span>
-                        </td>
-                        <td style={TD}><select value={r.basis} onChange={(e) => patchRate(r.id, 'basis', e.target.value)} style={SEL}>{BASIS_OPTS.map((o) => <option key={o}>{o}</option>)}</select></td>
-                        <td style={TD}>
+                    const cell = (k: string): React.ReactNode => {
+                      switch (k) {
+                        case 'type': return <select value={r.type} onChange={(e) => patchRate(r.id, 'type', e.target.value)} style={SEL}>{TYPE_OPTS.map((o) => <option key={o}>{o}</option>)}</select>;
+                        case 'pair': return <select value={r.pair} onChange={(e) => patchRate(r.id, 'pair', e.target.value)} style={SEL}>{PAIR_OPTS.map((o) => <option key={o}>{o}</option>)}</select>;
+                        case 'leg': return <span style={{ fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', color: leg === 'LC → FC' ? '#B45309' : '#2563EB', background: leg === 'LC → FC' ? 'rgba(245,158,11,.14)' : 'rgba(59,130,246,.12)' }}>{leg}</span>;
+                        case 'basis': return <select value={r.basis} onChange={(e) => patchRate(r.id, 'basis', e.target.value)} style={SEL}>{BASIS_OPTS.map((o) => <option key={o}>{o}</option>)}</select>;
+                        case 'date': return (
                           <button
                             type="button" className="fc-h fc-btn" onClick={() => setCal({ id: r.id, month: r.date.slice(0, 7) })}
                             title="Pick effective date"
@@ -605,18 +625,21 @@ export default function CurrencyTranslation() {
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
                             {r.date}
                           </button>
-                        </td>
-                        <td style={TD}>
-                          <span style={{ fontFamily: 'ui-sans-serif,system-ui,sans-serif', fontSize: '10px', fontWeight: 700, color: '#0F766E', background: 'rgba(15,118,110,.1)', border: '1px solid rgba(15,118,110,.26)', borderRadius: '5px', padding: '2px 6px' }}>{identOf(r)}</span>
-                        </td>
-                        <td style={{ ...TD, minWidth: '230px' }}><input value={r.event} onChange={(e) => patchRate(r.id, 'event', e.target.value)} placeholder="Event or basis" style={INP} /></td>
-                        <td style={{ ...TD, width: '110px' }}><input value={r.rate} onChange={(e) => patchRate(r.id, 'rate', e.target.value)} placeholder="0.0000" style={{ ...INP, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} /></td>
-                        <td style={TD}><select value={r.src} onChange={(e) => patchRate(r.id, 'src', e.target.value)} style={SEL}>{SRC_OPTS.map((o) => <option key={o}>{o}</option>)}</select></td>
-                        <td style={TD}>
+                        );
+                        case 'ident': return <span style={{ fontSize: '10px', fontWeight: 700, color: '#0F766E', background: 'rgba(15,118,110,.1)', border: '1px solid rgba(15,118,110,.26)', borderRadius: '5px', padding: '2px 6px' }}>{identOf(r)}</span>;
+                        case 'event': return <GrowText value={r.event} onChange={(v) => patchRate(r.id, 'event', v)} placeholder="Event or basis" label="Event or basis" style={{ fontSize: '11px', border: '1px solid #CBD2E0', borderRadius: '7px' }} />;
+                        case 'rate': return <input value={r.rate} onChange={(e) => patchRate(r.id, 'rate', e.target.value)} placeholder="0.0000" style={{ ...INP, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }} />;
+                        case 'src': return <select value={r.src} onChange={(e) => patchRate(r.id, 'src', e.target.value)} style={SEL}>{SRC_OPTS.map((o) => <option key={o}>{o}</option>)}</select>;
+                        default: return (
                           <span style={{ fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', color: complete ? '#15803D' : '#B45309', background: complete ? 'rgba(34,197,94,.14)' : 'rgba(245,158,11,.14)' }}>
                             {complete ? 'Ready' : 'Incomplete'}
                           </span>
-                        </td>
+                        );
+                      }
+                    };
+                    return (
+                      <tr key={r.id}>
+                        {rg.cols.map((c) => <td key={c.key} style={rg.td(c, '#ECEFF6')}>{cell(c.key)}</td>)}
                       </tr>
                     );
                   })}

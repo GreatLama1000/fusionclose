@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Clip, GridCol, GridHead, useGrid } from '../components/grid/Grid';
 
 /**
  * Intercompany Eliminations (ICE) — ported from docs/design/Fusion Close.dc.html,
@@ -120,16 +121,6 @@ const SEC: React.CSSProperties = {
 
 const LABEL: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, letterSpacing: '.6px', textTransform: 'uppercase', color: '#65708C',
-};
-
-const TH: React.CSSProperties = {
-  padding: '7px 10px', textAlign: 'left', verticalAlign: 'top', borderBottom: '1px solid #CBD2E0',
-  borderTop: '2px solid #1B3A5C', background: '#E4E8F0', position: 'sticky', top: 0, zIndex: 5,
-  fontWeight: 700, color: '#1B3A5C', whiteSpace: 'nowrap',
-};
-
-const TD: React.CSSProperties = {
-  padding: '5px 10px', borderBottom: '1px solid #E7EAF2', fontSize: '10.5px', color: '#65708C', whiteSpace: 'nowrap',
 };
 
 const n0 = (v: number) => v.toLocaleString('en-US');
@@ -479,61 +470,7 @@ export default function Intercompany() {
         {view === 'grid' ? (
           tab === 'E1_IC_Balances' && loaded ? (
             <>
-              <div style={{ overflow: 'auto', border: '1px solid #DCE0EB', borderRadius: '12px', background: '#ECEFF6', flex: 1, minHeight: 0 }}>
-                <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit' }}>
-                  <thead>
-                    <tr>
-                      {E1_COLS.map((c) => {
-                        const [col, bg] = KIND_META[c.t];
-                        return (
-                          <th key={c.k} style={{ ...TH, background: bg, color: col }} title={c.note ?? KIND_META[c.t][2]}>
-                            <span style={{ display: 'block', fontSize: '9px', letterSpacing: '.4px', textTransform: 'uppercase', lineHeight: 1.25 }}>{c.l}</span>
-                            <span style={{ display: 'block', marginTop: '2px', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '8.5px', fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#8A93AB' }}>{c.k}</span>
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {E1.map((r) => {
-                      const flagged = r.unexplained_difference > tolValue || r.diff_reason === 'UNRESOLVED';
-                      return (
-                        <tr key={r.elim_id} className="fc-h" style={flagged ? { background: 'rgba(180,35,24,.045)' } : undefined}>
-                          {E1_COLS.map((c) => {
-                            const raw = r[c.k];
-                            const v = c.num ? (Number(raw) ? n0(Number(raw)) : '—') : String(raw ?? '') || '—';
-                            const isDiff = c.k === 'unexplained_difference' || c.k === 'gross_difference';
-                            return (
-                              <td
-                                key={c.k}
-                                title={c.k === 'entity_a_code' || c.k === 'entity_b_code' ? ENT_NAMES[String(raw)] : undefined}
-                                style={{
-                                  ...TD,
-                                  textAlign: c.num ? 'right' : 'left',
-                                  fontVariantNumeric: c.num ? 'tabular-nums' : undefined,
-                                  color: isDiff && Number(raw) > 0 ? '#B42318'
-                                    : c.k === 'eliminate_amount' ? '#232C42'
-                                      : c.t === 'formula' ? '#2C5580' : '#65708C',
-                                  fontWeight: c.k === 'elim_id' || c.k === 'eliminate_amount' || (isDiff && Number(raw) > 0) ? 700 : 400,
-                                  background: c.t === 'formula' ? 'rgba(59,130,246,.04)' : c.t === 'system' ? 'rgba(107,122,141,.04)' : undefined,
-                                }}
-                              >
-                                {c.k === 'diff_reason' && raw && raw !== 'NIL' ? (
-                                  <span style={{
-                                    fontSize: '9px', fontWeight: 700, padding: '2px 6px', borderRadius: '5px',
-                                    color: raw === 'UNRESOLVED' ? '#B42318' : '#B45309',
-                                    background: raw === 'UNRESOLVED' ? 'rgba(180,35,24,.1)' : 'rgba(245,158,11,.14)',
-                                  }}>{String(raw)}</span>
-                                ) : v}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <E1Grid tolValue={tolValue} />
               <div style={{ marginTop: '11px', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '11px', color: '#9AA3BA' }}>{E1.length} rows · {E1_COLS.length} fields</span>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', height: '24px', padding: '0 10px 0 8px', borderRadius: '7px', background: 'rgba(16,185,129,.11)', border: '1px solid rgba(16,185,129,.35)' }}>
@@ -570,7 +507,6 @@ export default function Intercompany() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: '12px', fontWeight: 700, color: '#232C42' }}>
                       {c.l}
-                      <span style={{ marginLeft: '8px', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '9.5px', fontWeight: 400, color: '#8A93AB' }}>{c.k}</span>
                     </div>
                     <div style={{ marginTop: '3px', fontSize: '11.5px', color: '#65708C', lineHeight: 1.5 }}>{c.note ?? lab}</div>
                   </div>
@@ -594,9 +530,110 @@ export default function Intercompany() {
   );
 }
 
+/* ========================== E1 register grid ========================== */
+
+/** E1 columns as the shared grid takes them — amounts right-aligned and numeric */
+const E1_GRID: GridCol[] = E1_COLS.map((c) => ({
+  key: c.k, label: c.l, w: c.num ? 132 : c.k === 'comments' ? 240 : c.k.endsWith('_account') ? 150 : 128,
+  align: c.num ? 'right' : 'left', num: !!c.num,
+}));
+const E1_KIND = Object.fromEntries(E1_COLS.map((c) => [c.k, c])) as Record<string, (typeof E1_COLS)[number]>;
+
+function E1Grid({ tolValue }: { tolValue: number }) {
+  const g = useGrid<E1Row>('ic-E1_IC_Balances', E1_GRID, E1, (r, k) => r[k as keyof E1Row], { defFreeze: 'elim_id', rowKey: (r) => r.elim_id });
+  return (
+    <div style={{ overflow: 'auto', border: '1px solid #DCE0EB', borderRadius: '12px', background: '#ECEFF6', flex: 1, minHeight: 0 }}>
+      <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit', tableLayout: 'fixed' }}>
+        <thead><GridHead g={g} /></thead>
+        <tbody>
+          {g.rows.map((r) => {
+            const flagged = r.unexplained_difference > tolValue || r.diff_reason === 'UNRESOLVED';
+            return (
+              <tr key={r.elim_id} className="fc-h">
+                {g.cols.map((gc) => {
+                  const c = E1_KIND[gc.key];
+                  const raw = r[c.k];
+                  const v = c.num ? (Number(raw) ? n0(Number(raw)) : '—') : String(raw ?? '') || '—';
+                  const isDiff = c.k === 'unexplained_difference' || c.k === 'gross_difference';
+                  // rows out of tolerance shade red; otherwise formula / system fields keep their tint
+                  const bg = flagged ? '#F9EDEE' : c.t === 'formula' ? '#EEF2FA' : c.t === 'system' ? '#F0F1F4' : '#F5F6FA';
+                  return (
+                    <td
+                      key={c.k}
+                      title={c.k === 'entity_a_code' || c.k === 'entity_b_code' ? ENT_NAMES[String(raw)] : c.note}
+                      style={g.td(gc, bg, {
+                        fontSize: '10.5px',
+                        fontVariantNumeric: c.num ? 'tabular-nums' : undefined,
+                        color: isDiff && Number(raw) > 0 ? '#B42318'
+                          : c.k === 'eliminate_amount' ? '#232C42'
+                            : c.t === 'formula' ? '#2C5580' : '#65708C',
+                        fontWeight: c.k === 'elim_id' || c.k === 'eliminate_amount' || (isDiff && Number(raw) > 0) ? 700 : 400,
+                      })}
+                    >
+                      {c.k === 'diff_reason' && raw && raw !== 'NIL' ? (
+                        <span style={{
+                          fontSize: '9px', fontWeight: 700, padding: '2px 6px', borderRadius: '5px',
+                          color: raw === 'UNRESOLVED' ? '#B42318' : '#B45309',
+                          background: raw === 'UNRESOLVED' ? 'rgba(180,35,24,.1)' : 'rgba(245,158,11,.14)',
+                        }}>{String(raw)}</span>
+                      ) : c.num ? v : <Clip g={g} rk={r.elim_id} ck={c.k}>{v}</Clip>}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+          {g.rows.length === 0 && (
+            <tr><td colSpan={g.cols.length} style={{ padding: '28px', textAlign: 'center', fontSize: '11.5px', color: '#9AA3BA', fontStyle: 'italic' }}>No rows match the filters.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /* ========================== dashboard ========================== */
 
 const DASH_ENTS = ['IN-HOLD', 'US-OPCO', 'SG-OPCO', 'AE-DIST', 'IN-MFG', 'LK-OPCO'];
+
+/** heatmap columns — the row entity, then one exposure column per counterparty */
+const HEAT_COLS: GridCol[] = [
+  { key: 'a', label: 'A ↓ / B →', w: 110 },
+  ...DASH_ENTS.map((b) => ({ key: b, label: b, w: 118, align: 'center' as const, num: true })),
+];
+
+function HeatGrid({ matrix, max, onPick }: { matrix: Record<string, Record<string, number>>; max: number; onPick: (s: string | null) => void }) {
+  const g = useGrid<string>('ic-heatmap', HEAT_COLS, DASH_ENTS, (a, k) => (k === 'a' ? a : matrix[a][k]), { defFreeze: 'a', rowKey: (a) => a });
+  return (
+    <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit', tableLayout: 'fixed' }}>
+      <thead><GridHead g={g} /></thead>
+      <tbody>
+        {g.rows.map((a) => (
+          <tr key={a}>
+            {g.cols.map((c) => {
+              if (c.key === 'a') {
+                return <td key="a" style={g.td(c, '#ECEFF6', { fontSize: '10.5px', fontWeight: 700, color: '#232C42' })}><Clip g={g} rk={a} ck="a">{a}</Clip></td>;
+              }
+              const b = c.key;
+              const v = matrix[a][b];
+              const t = v / max;
+              const shade = v ? `rgba(37,99,235,${(0.08 + t * 0.55).toFixed(2)})` : 'rgba(228,232,240,.4)';
+              return (
+                <td key={b} onClick={() => onPick(v ? `${a} → ${b}` : null)} title={v ? `${a} → ${b} · ${n0(v)}` : 'No exposure'}
+                  style={g.td(c, shade, { background: shade, fontSize: '10.5px', cursor: v ? 'pointer' : 'default', color: t > 0.5 ? '#fff' : '#414B62', fontWeight: v ? 700 : 400, fontVariantNumeric: 'tabular-nums' })}>
+                  {v ? n0(v) : '—'}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+        {g.rows.length === 0 && (
+          <tr><td colSpan={g.cols.length} style={{ padding: '24px', textAlign: 'center', fontSize: '11.5px', color: '#9AA3BA', fontStyle: 'italic' }}>No rows match the filters.</td></tr>
+        )}
+      </tbody>
+    </table>
+  );
+}
 
 function IcDashboard({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<'heat' | 'flow' | 'exc'>('heat');
@@ -637,31 +674,7 @@ function IcDashboard({ onClose }: { onClose: () => void }) {
 
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
           {mode === 'heat' && (
-            <table style={{ borderCollapse: 'collapse', width: '100%', font: 'inherit' }}>
-              <thead>
-                <tr>
-                  <th style={{ ...TH, borderTop: 'none', fontSize: '9px' }}>A ↓ / B →</th>
-                  {DASH_ENTS.map((b) => <th key={b} style={{ ...TH, borderTop: 'none', fontSize: '9px', textAlign: 'center' }}>{b}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {DASH_ENTS.map((a) => (
-                  <tr key={a}>
-                    <td style={{ ...TD, fontWeight: 700, color: '#232C42' }}>{a}</td>
-                    {DASH_ENTS.map((b) => {
-                      const v = matrix[a][b];
-                      const t = v / max;
-                      return (
-                        <td key={b} onClick={() => setSel(v ? `${a} → ${b}` : null)} title={v ? `${a} → ${b} · ${n0(v)}` : 'No exposure'}
-                          style={{ ...TD, textAlign: 'center', cursor: v ? 'pointer' : 'default', background: v ? `rgba(37,99,235,${(0.08 + t * 0.55).toFixed(2)})` : 'rgba(228,232,240,.4)', color: t > 0.5 ? '#fff' : '#414B62', fontWeight: v ? 700 : 400, fontVariantNumeric: 'tabular-nums' }}>
-                          {v ? n0(v) : '—'}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <HeatGrid matrix={matrix} max={max} onPick={setSel} />
           )}
 
           {mode === 'flow' && (

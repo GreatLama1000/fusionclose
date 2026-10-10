@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { Clip, GridCol, GridHead, useGrid } from '../components/grid/Grid';
 
 /**
  * Manage Teams — ported from docs/design/Fusion Close.dc.html,
@@ -130,20 +131,20 @@ const INSET: React.CSSProperties = {
   borderRadius: '9px', color: '#333D55', font: 'inherit', outline: 'none',
 };
 
-const TH: React.CSSProperties = {
-  padding: '9px 12px', textAlign: 'left', fontSize: '9.5px', letterSpacing: '.4px',
-  textTransform: 'uppercase', fontWeight: 700, color: '#1B3A5C', background: '#E4E8F0',
-  borderBottom: '1px solid #CBD2E0', borderTop: '2px solid #1B3A5C', whiteSpace: 'nowrap',
-};
 
-const KEY_STYLE: React.CSSProperties = {
-  display: 'block', marginTop: '2px', fontFamily: 'ui-monospace,Menlo,monospace',
-  fontSize: '8.5px', fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: '#8A93AB',
-};
+/** shared-grid tables — fixed layout so column widths hold */
+const TABLE: React.CSSProperties = { borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%', font: 'inherit', tableLayout: 'fixed' };
 
-const TD: React.CSSProperties = {
-  padding: '9px 12px', borderBottom: '1px solid #E7EAF2', fontSize: '11.5px', color: '#65708C', verticalAlign: 'top',
-};
+/** design columns of the members register */
+const MEMBER_COLS: GridCol[] = [
+  { key: 'user', label: 'Member', w: 260 },
+  { key: 'role', label: 'Access level', w: 150 },
+  { key: 'workspace', label: 'Workspace', w: 200 },
+  { key: 'projects', label: 'Projects', w: 230 },
+  { key: 'permissions', label: 'Permissions', w: 120, num: true, align: 'right' },
+  { key: 'status', label: 'Status', w: 150 },
+  { key: 'lastActive', label: 'Last active', w: 140 },
+];
 
 const initials = (n: string) => n.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
 
@@ -201,6 +202,30 @@ export default function ManageTeams() {
 
   const permOn = (email: string, key: string) =>
     perms[email]?.[key] ?? ROLE_DEFAULTS[roles[email]].includes(key);
+
+  /* ---- shared table kit: members register ---- */
+  const mg = useGrid<User>('teams-members', MEMBER_COLS, rows, (u, k) => {
+    if (k === 'user') return `${u.name} ${u.email}`;
+    if (k === 'role') return roles[u.email];
+    if (k === 'projects') return u.projects.join(', ');
+    if (k === 'permissions') return permCount(u.email);
+    if (k === 'status') return u.mfa ? u.status : `${u.status} · No MFA`;
+    if (k === 'lastActive') return u.lastActive;
+    return u.workspace;
+  }, { rowKey: (u) => u.email });
+
+  /* ---- shared table kit: section access matrix (one column per group) ---- */
+  const secCols = useMemo<GridCol[]>(() => [
+    { key: 'item', label: 'Section', w: 300 },
+    ...groups.map((g) => ({ key: g.id, label: g.name, w: 130, align: 'center' as const })),
+  ], [groups]);
+  type SecItem = { id: string; title: string };
+  const secRows = useMemo<SecItem[]>(() => [...SEC_ITEMS[secTab]], [secTab]);
+  const sg = useGrid<SecItem>('teams-section-access', secCols, secRows, (it, k) => {
+    if (k === 'item') return it.title;
+    const g = groups.find((x) => x.id === k);
+    return g ? ACL_TONE[effAcl(it.id, g)][0] : '';
+  }, { defFreeze: 'item', rowKey: (it) => it.id });
 
   const TABS = [
     ['members', 'Members', USERS.length],
@@ -288,86 +313,67 @@ export default function ManageTeams() {
           </div>
 
           <div style={{ overflow: 'auto', borderRadius: '12px', border: '1px solid #D6DBE7', background: '#F6F7FB' }}>
-            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', font: 'inherit' }}>
+            <table style={TABLE}>
               <thead>
-                <tr>
-                  {[['Member', 'user'], ['Access level', 'role'], ['Workspace', 'workspace'], ['Projects', 'projects'],
-                    ['Permissions', 'permissions'], ['Status', 'status'], ['Last active', 'last_active']].map(([h, k]) => (
-                    <th key={h} style={TH}>{h}<span style={KEY_STYLE}>{k}</span></th>
-                  ))}
-                </tr>
+                <GridHead g={mg} />
               </thead>
               <tbody>
-                {rows.map((u) => {
+                {mg.rows.map((u) => {
                   const role = roles[u.email];
                   const [rc, rbg] = LEVEL_TONE[role];
+                  const bg = u.status === 'Inactive' ? '#F4F5F8' : '#fff';
+                  const cell = (k: string) => {
+                    if (k === 'user') return (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                        <span style={{ flex: 'none', width: '26px', height: '26px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 700, color: '#fff', background: 'linear-gradient(145deg,#5B8DEF,#2F5FD0)' }}>
+                          {initials(u.name)}
+                        </span>
+                        <Clip g={mg} rk={u.email} ck="user" title={`${u.name} · ${u.email}`} style={{ flex: 1, minWidth: 0 }}>
+                          <b style={{ fontSize: '12px', fontWeight: 700, color: '#232C42' }}>{u.name}</b>
+                          <span style={{ marginLeft: '7px', fontSize: '10.5px', color: '#7A84A0' }}>{u.email}</span>
+                        </Clip>
+                      </span>
+                    );
+                    if (k === 'role') return (
+                      <select
+                        value={role}
+                        onChange={(e) => { setRoles((r) => ({ ...r, [u.email]: e.target.value as Level })); say(`${u.name} is now ${e.target.value}.`); }}
+                        style={{ maxWidth: '100%', height: '26px', borderRadius: '6px', border: `1px solid ${rc}44`, background: rbg, color: rc, font: 'inherit', fontSize: '10.5px', fontWeight: 700, padding: '0 6px', cursor: 'pointer' }}
+                      >
+                        {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    );
+                    if (k === 'projects') return (
+                      <Clip g={mg} rk={u.email} ck="projects" title={u.projects.join(', ')}>
+                        {u.projects.map((p) => (
+                          <span key={p} style={{ display: 'inline-block', margin: '1px 4px 1px 0', fontSize: '9.5px', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', color: '#0F766E', background: 'rgba(15,118,110,.11)' }}>{p}</span>
+                        ))}
+                      </Clip>
+                    );
+                    if (k === 'permissions') return (
+                      <button type="button" className="fc-btn" onClick={() => setPermFor(permFor === u.email ? null : u.email)} style={{ fontSize: '11px', fontWeight: 700, color: '#3B5BDB' }}>
+                        {permCount(u.email)} of 13 {permFor === u.email ? '▾' : '▸'}
+                      </button>
+                    );
+                    if (k === 'status') return (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: u.status === 'Active' ? '#15803D' : '#7A84A0' }}>
+                        <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: u.status === 'Active' ? '#16A34A' : '#9AA3BA' }} />
+                        {u.status}
+                        {!u.mfa && <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#B45309', background: 'rgba(245,158,11,.14)', padding: '1px 6px', borderRadius: '5px' }}>No MFA</span>}
+                      </span>
+                    );
+                    if (k === 'lastActive') return <Clip g={mg} rk={u.email} ck={k} style={{ fontSize: '11px', color: '#65708C' }}>{u.lastActive}</Clip>;
+                    return <Clip g={mg} rk={u.email} ck={k} style={{ fontSize: '11px', color: '#414B62' }}>{u.workspace}</Clip>;
+                  };
                   return (
                     <React.Fragment key={u.email}>
-                      <tr style={u.status === 'Inactive' ? { opacity: 0.66 } : undefined}>
-                        <td style={TD}>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <span
-                              style={{
-                                flex: 'none', width: '30px', height: '30px', borderRadius: '50%',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '10.5px', fontWeight: 700, color: '#fff',
-                                background: 'linear-gradient(145deg,#5B8DEF,#2F5FD0)',
-                              }}
-                            >
-                              {initials(u.name)}
-                            </span>
-                            <span style={{ flex: 1, minWidth: 0 }}>
-                              <span style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: '#232C42' }}>{u.name}</span>
-                              <span style={{ display: 'block', fontSize: '10.5px', color: '#7A84A0' }}>{u.email}</span>
-                            </span>
-                          </span>
-                        </td>
-                        <td style={TD}>
-                          <select
-                            value={role}
-                            onChange={(e) => { setRoles((r) => ({ ...r, [u.email]: e.target.value as Level })); say(`${u.name} is now ${e.target.value}.`); }}
-                            style={{
-                              height: '26px', borderRadius: '6px', border: `1px solid ${rc}44`, background: rbg,
-                              color: rc, font: 'inherit', fontSize: '10.5px', fontWeight: 700, padding: '0 6px', cursor: 'pointer',
-                            }}
-                          >
-                            {LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-                          </select>
-                        </td>
-                        <td style={TD}>{u.workspace}</td>
-                        <td style={{ ...TD, maxWidth: '210px' }}>
-                          <span style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                            {u.projects.map((p) => (
-                              <span key={p} style={{ fontSize: '9.5px', fontWeight: 700, padding: '2px 7px', borderRadius: '5px', color: '#0F766E', background: 'rgba(15,118,110,.11)' }}>
-                                {p}
-                              </span>
-                            ))}
-                          </span>
-                        </td>
-                        <td style={TD}>
-                          <button
-                            type="button" className="fc-btn"
-                            onClick={() => setPermFor(permFor === u.email ? null : u.email)}
-                            style={{ fontSize: '11px', fontWeight: 700, color: '#3B5BDB' }}
-                          >
-                            {permCount(u.email)} of 13 {permFor === u.email ? '▾' : '▸'}
-                          </button>
-                        </td>
-                        <td style={TD}>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: u.status === 'Active' ? '#15803D' : '#7A84A0' }}>
-                            <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: u.status === 'Active' ? '#16A34A' : '#9AA3BA' }} />
-                            {u.status}
-                          </span>
-                          {!u.mfa && (
-                            <span style={{ display: 'block', marginTop: '3px', fontSize: '9.5px', fontWeight: 700, color: '#B45309' }}>No MFA</span>
-                          )}
-                        </td>
-                        <td style={{ ...TD, whiteSpace: 'nowrap' }}>{u.lastActive}</td>
+                      <tr style={u.status === 'Inactive' ? { color: '#8A93AB' } : undefined}>
+                        {mg.cols.map((c) => <td key={c.key} style={mg.td(c, bg)}>{cell(c.key)}</td>)}
                       </tr>
 
                       {permFor === u.email && (
                         <tr>
-                          <td colSpan={7} style={{ padding: '0 12px 14px', background: 'rgba(228,232,240,.5)', borderBottom: '1px solid #E7EAF2' }}>
+                          <td colSpan={mg.cols.length} style={{ padding: '0 12px 14px', background: 'rgba(228,232,240,.5)', borderBottom: '1px solid #E7EAF2' }}>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(240px,1fr))', gap: '12px', paddingTop: '12px' }}>
                               {PERM_GROUPS.map((pg) => (
                                 <div key={pg.k}>
@@ -600,31 +606,27 @@ export default function ManageTeams() {
           </div>
 
           <div style={{ overflow: 'auto', borderRadius: '12px', border: '1px solid #D6DBE7', background: '#F6F7FB' }}>
-            <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', font: 'inherit' }}>
+            <table style={TABLE}>
               <thead>
-                <tr>
-                  <th style={{ ...TH, minWidth: '280px' }}>Section<span style={KEY_STYLE}>item</span></th>
-                  {groups.map((g, i) => (
-                    <th key={g.id} style={{ ...TH, textAlign: 'center' }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: GROUP_COLORS[i % GROUP_COLORS.length] }} />
-                        {g.name}
-                      </span>
-                      <span style={KEY_STYLE}>{g.role}</span>
-                    </th>
-                  ))}
-                </tr>
+                <GridHead g={sg} />
               </thead>
               <tbody>
-                {SEC_ITEMS[secTab].map((it) => (
+                {sg.rows.map((it) => (
                   <tr key={it.id}>
-                    <td style={{ ...TD, fontSize: '12px', color: '#333D55', fontWeight: 600 }}>{it.title}</td>
-                    {groups.map((g) => {
+                    {sg.cols.map((c) => {
+                      if (c.key === 'item') {
+                        return (
+                          <td key={c.key} style={sg.td(c, '#fff')}>
+                            <Clip g={sg} rk={it.id} ck="item" style={{ fontSize: '12px', color: '#333D55', fontWeight: 600 }}>{it.title}</Clip>
+                          </td>
+                        );
+                      }
+                      const g = groups.find((x) => x.id === c.key)!;
                       const eff = effAcl(it.id, g);
                       const isOverride = acl[it.id]?.[g.id] !== undefined;
                       const [label, color, bg] = ACL_TONE[eff];
                       return (
-                        <td key={g.id} style={{ ...TD, textAlign: 'center' }}>
+                        <td key={c.key} style={sg.td(c, '#fff')}>
                           <button
                             type="button" className="fc-h fc-btn"
                             onClick={() => cycleAcl(it.id, g)}
