@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../state/AppContext';
 import type { FcMenuEvent } from '../components/CommentMenu';
+import { useDismissOnClick } from '../hooks/useDismissOnClick';
 
 /**
  * Notes & Disclosures — ported from docs/design/Fusion Close.dc.html.
@@ -463,6 +464,7 @@ export function NdComposer({
   const [std, setStd] = useState('');
   const [vLabel, setVLabel] = useState('');
   const [flash, setFlash] = useState('');
+  useDismissOnClick(!!flash, () => setFlash(''));
   const [confirm, setConfirm] = useState(false);
 
   const meta = TAGS.find((t) => t.key === tag)!;
@@ -943,6 +945,7 @@ export function NotesPanel({
   const [dragId, setDragId] = useState<string | null>(null);
   const [drafting, setDrafting] = useState<NdDraft | null>(null);
   const [done, setDone] = useState('');
+  useDismissOnClick(!!done, () => setDone(''));
 
   const onDown = (e: React.PointerEvent) => {
     drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
@@ -1518,6 +1521,7 @@ export function NotesDocument({
   const { users: team } = useApp();
   const [dragId, setDragId] = useState<string | null>(null);
   const [lockToast, setLockToast] = useState<{ id: string; msg: string } | null>(null);
+  useDismissOnClick(!!lockToast, () => setLockToast(null));
   const activeEl = useRef<HTMLElement | null>(null);
   const toastT = useRef<number | undefined>(undefined);
   const docRef = useRef<HTMLDivElement | null>(null);

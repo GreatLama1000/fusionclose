@@ -3,6 +3,7 @@ import { useApp } from '../state/AppContext';
 import { useTbUploads, TbUploads, TbUploadModal, TbStatusButton, TbSettingsPanel } from '../components/TbUpload';
 import { JournalEntriesTab, useJournal } from './journal/JournalEntries';
 import { Clip, GridCol, GridHead, useGrid } from '../components/grid/Grid';
+import { useDismissOnClick } from '../hooks/useDismissOnClick';
 
 /**
  * Financial Data Layer — ported from docs/design/Fusion Close.dc.html,
@@ -854,6 +855,7 @@ function FsliMapping({
   /* ---- confirm mappings — every account must sit under a line item first ---- */
   const unmappedCount = CATALOG.length - mapped.size;
   const [confirmMsg, setConfirmMsg] = useState<string | null>(null);
+  useDismissOnClick(!!confirmMsg, () => setConfirmMsg(null));
   const confirm = () => {
     if (unmappedCount > 0) {
       setConfirmMsg(`${unmappedCount} account${unmappedCount === 1 ? ' is' : 's are'} still unmapped — map every COA before confirming.`);

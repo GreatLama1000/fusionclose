@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Icon from '../components/Icon';
 import { useApp } from '../state/AppContext';
+import { useDismissOnClick } from '../hooks/useDismissOnClick';
 
 /** Sign-in screen — shown until the user signs in, then the app opens on Home (the landing page). */
 export default function Login() {
@@ -8,6 +9,7 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  useDismissOnClick(!!error, () => setError(null));
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Clip, GridCol, GridHead, useGrid } from '../components/grid/Grid';
+import { useDismissOnClick } from '../hooks/useDismissOnClick';
 
 /**
  * Manage Teams — ported from docs/design/Fusion Close.dc.html,
@@ -165,6 +166,7 @@ export default function ManageTeams() {
   );
   const [secTab, setSecTab] = useState<'sosap' | 'notes'>('sosap');
   const [toast, setToast] = useState('');
+  useDismissOnClick(!!toast, () => setToast(''));
   const [permFor, setPermFor] = useState<string | null>(null);
 
   const say = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 2800); };

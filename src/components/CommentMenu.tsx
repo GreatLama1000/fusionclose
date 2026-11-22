@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../state/AppContext';
 import { CmtPrio, PRIOS, PRIO_TONE } from './CommentsPanel';
 import { routes } from '../routes';
+import { useDismissOnClick } from '../hooks/useDismissOnClick';
 
 /**
  * The application-wide right-click comment menu — ported from
@@ -84,6 +85,7 @@ export default function CommentMenu() {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [copied, setCopied] = useState(false);
+  useDismissOnClick(copied, () => setCopied(false));
   /** what was right-clicked, and the caret there — handed to the surface on link / local comment */
   const target = useRef<{ el: Element; range: Range | null } | null>(null);
   const routeLabel = useRef('');
@@ -215,6 +217,7 @@ export default function CommentMenu() {
       {/* ---- the menu ---- */}
       {menu && (
         <div
+          data-comment-ui
           onClick={() => setMenu(null)}
           onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}
           style={{ position: 'fixed', inset: 0, zIndex: 1330 }}
@@ -278,6 +281,7 @@ export default function CommentMenu() {
       {/* ---- the composer — same one the footnote tables use ---- */}
       {draft && (
         <div
+          data-comment-ui
           onClick={() => setDraft(null)}
           onContextMenu={(e) => { e.preventDefault(); setDraft(null); }}
           style={{ position: 'fixed', inset: 0, zIndex: 1340, background: 'rgba(35,44,66,.18)' }}

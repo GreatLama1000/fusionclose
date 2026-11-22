@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useDismissOnClick } from '../hooks/useDismissOnClick';
 
 /**
  * The two deliverables reachable from the Reporting header, ported from
@@ -203,6 +204,7 @@ export function WorkingNote({
   const [active, setActive] = useState(0);
   const [sel, setSel] = useState({ r: 3, c: 4 });
   const [toast, setToast] = useState('');
+  useDismissOnClick(!!toast, () => setToast(''));
   const [target, setTarget] = useState(noteTargets[0] ?? '');
 
   const sheet = sheets[active];

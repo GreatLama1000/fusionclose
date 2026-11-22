@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../../state/AppContext';
 import { Bar, FileBadge, fmtBytes } from '../../components/TbUpload';
+import { useDismissOnClick } from '../../hooks/useDismissOnClick';
 import {
   BRIDGE_LABELS, BU_OPTS, COA_REF, DEFAULT_PERIOD, ENTITIES, GCOA_OPTS, JE_SEED, JE_TYPES, NET_PROFIT, PERIODS,
   Je, JeLine, JeLock, JeStatus, blankLine, byGcoa, byLcoa, covers, fmtAmt, fmtSigned, leCanon, leLabel, leNameOf,
@@ -125,6 +126,7 @@ export function JournalEntriesTab({ store }: { store: JournalStore }) {
   const [lockOpen, setLockOpen] = useState(false);
   const [upOpen, setUpOpen] = useState(false);
   const [toast, setToast] = useState<{ tone: 'ok' | 'bad'; msg: string; list?: string[] } | null>(null);
+  useDismissOnClick(!!toast, () => setToast(null));
   const toastT = useRef<number | undefined>(undefined);
 
   /* column state: filter, sort, rename, width — design `tblGet('ts')` */

@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import ImageSlot from '../components/ImageSlot';
 import { useApp } from '../state/AppContext';
+import {
+  entityCountLabel, setupRows, SetupRowView, SetupSummaryState, useEngagementSetupSummary, useWelcomeMessage,
+} from '../services/commandCenterService';
 import { RouteKey } from '../routes';
 
 /**
@@ -596,10 +599,74 @@ function TileCard({ t, badge, onClick }: { t: Omit<Tile, 'badge'>; badge: string
   );
 }
 
+/* ---------- Stage 1 from the database (via the service layer) ---------- */
+
+const ROW_DOT: Record<SetupRowView['tone'], string> = { good: '#16A34A', warn: '#F59E0B', idle: '#9AA3BA', bad: '#EF4444' };
+
+/** Engagement Setup card: STAGES[0] is the layout; status, rows and progress come from the summary */
+function setupStage({ summary, loading, error }: SetupSummaryState): Stage {
+  const base = STAGES[0];
+  if (!summary) {
+    const text = loading ? 'Loading…' : 'Unavailable';
+    return {
+      ...base,
+      bg: '#ECEFF6', border: '1px solid rgba(154,163,186,.35)', hoverBorder: 'rgba(154,163,186,.7)',
+      leds: [{ color: DIM }, { color: DIM }, { color: DIM }],
+      badge: { text: loading ? 'Loading' : 'Offline', color: '#65708C', bg: 'rgba(154,163,186,.16)', border: '1px solid rgba(154,163,186,.35)' },
+      rows: base.rows.map((r) => ({ ...r, dot: '#9AA3BA', value: '—' })),
+      bar: { width: '0%', background: '#9AA3BA' },
+      footLeft: loading ? text : `Could not load — ${error ?? 'server unavailable'}`,
+      footLeftStyle: { fontSize: '10.5px', fontWeight: 700, color: loading ? '#65708C' : '#B91C1C' },
+      footRightColor: '#3B5BDB',
+    };
+  }
+
+  const rows = setupRows(summary).map((r) => ({
+    dot: ROW_DOT[r.tone], label: r.label, labelColor: '#414B62', value: r.value,
+    valueColor: r.tone === 'warn' ? '#B45309' : '#7A84A0', valueBold: r.tone === 'warn',
+  }));
+  const pct = summary.completionPct;
+
+  if (summary.status === 'Done') {
+    return { ...base, rows, bar: { ...base.bar, width: '100%' }, footLeft: '100% complete' };
+  }
+  if (summary.status === 'In progress') {
+    return {
+      ...base,
+      bg: '#F2EEE3', border: '1px solid rgba(245,158,11,.38)', hoverBorder: 'rgba(245,158,11,.7)',
+      leds: [{ color: DIM }, { color: '#F59E0B', glow: '0 0 6px #F59E0B', anim: 'fcPulse 1.8s ease-in-out infinite' }, { color: DIM }],
+      badge: { text: 'In progress', color: '#B45309', bg: 'rgba(245,158,11,.14)', border: '1px solid rgba(245,158,11,.34)' },
+      rows,
+      bar: { width: `${pct}%`, background: 'linear-gradient(90deg,#F59E0B,#D97706)' },
+      footLeft: `${pct}% complete`,
+      footLeftStyle: { fontSize: '10.5px', fontWeight: 700, color: '#B45309' },
+      footRight: 'Continue ›',
+      footRightColor: '#B45309',
+    };
+  }
+  return {
+    ...base,
+    bg: '#ECEFF6', border: '1px solid rgba(154,163,186,.35)', hoverBorder: 'rgba(154,163,186,.7)',
+    leds: [{ color: '#EF4444', glow: '0 0 6px #EF4444' }, { color: DIM }, { color: DIM }],
+    badge: { text: 'Not started', color: '#65708C', bg: 'rgba(154,163,186,.16)', border: '1px solid rgba(154,163,186,.35)' },
+    rows,
+    bar: { width: '0%', background: '#9AA3BA' },
+    footLeft: '0% complete',
+    footLeftStyle: { fontSize: '10.5px', fontWeight: 700, color: '#65708C' },
+    footRight: 'Start ›',
+    footRightColor: '#3B5BDB',
+  };
+}
+
 /* ---------- screen ---------- */
 
 export default function CommandCenter() {
-  const { navTo, modOn, toggleModule, wsArchive, setWsArchive } = useApp();
+  const { navTo, modOn, toggleModule, wsArchive, setWsArchive, currentUser } = useApp();
+  const welcome = useWelcomeMessage(currentUser.name);
+  const setup = useEngagementSetupSummary();
+  const stages = useMemo(() => [setupStage(setup), ...STAGES.slice(1)], [setup]);
+  const tenantName = setup.summary?.tenantName ?? (setup.loading ? 'Loading…' : 'ClientCo Industries Group');
+  const entityLabel = setup.summary ? entityCountLabel(setup.summary) : '—';
 
   const modCount = MODULE_TILES.filter((m) => modOn[m.key]).length;
   const modEnabledLabel = `${modCount} of 4 enabled`;
@@ -654,7 +721,7 @@ export default function CommandCenter() {
             Command Center
           </div>
           <h1 style={{ margin: '6px 0 0', fontSize: '26px', fontWeight: 700, letterSpacing: '.2px', color: '#232C42' }}>
-            Good morning, Amara
+            {welcome}
           </h1>
 
           {/* archive chips — static grey, no live counts (design lines 1000–1003) */}
@@ -782,10 +849,10 @@ export default function CommandCenter() {
               {archived ? 'Archived Period' : 'Active Tenant'}
             </div>
             <div style={{ fontSize: '15px', fontWeight: 700, color: '#232C42', marginTop: '4px' }}>
-              {archived ? wsArchive.name : 'ClientCo Industries Group'}
+              {archived ? wsArchive.name : tenantName}
             </div>
             <div style={{ fontSize: '11.5px', color: '#65708C', marginTop: '2px', fontStyle: 'italic' }}>
-              {archived ? `30 entities · ${wsArchive.period} locked` : '30 entities · Q3 2026 open'}
+              {archived ? `30 entities · ${wsArchive.period} locked` : `${entityLabel} · Q3 2026 open`}
             </div>
             <button
               className="fc-btn"
@@ -817,7 +884,7 @@ export default function CommandCenter() {
               ...(archived ? { opacity: 0.55, pointerEvents: 'none', filter: 'saturate(.55)' } : null),
             }}
           >
-            {STAGES.map((s) => (
+            {stages.map((s) => (
               <StageCard key={s.num} s={s} onClick={() => navTo(s.route)} />
             ))}
           </div>

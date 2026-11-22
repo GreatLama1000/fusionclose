@@ -16,7 +16,8 @@ export class ApiError extends Error {
 
 const BASE = '/api/v1';
 
-async function request<T>(path: string, init?: { method?: string; body?: unknown; signal?: AbortSignal }): Promise<T> {
+/** shared fetch wrapper for every /api/v1 client — JSON in/out, ApiError on a non-2xx */
+export async function request<T>(path: string, init?: { method?: string; body?: unknown; signal?: AbortSignal }): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method: init?.method ?? 'GET',
     headers: init?.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,

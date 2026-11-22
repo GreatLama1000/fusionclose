@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../state/AppContext';
-import { engagementSetupApi } from '../api/engagementSetupClient';
+import { ApiError, engagementSetupApi } from '../api/engagementSetupClient';
+import { ACTIVE_ENGAGEMENT_ID } from '../api/engagement';
 import type { EngagementConfigRecord, LegalEntity, LegalEntityInput, LegalEntityPatch } from '../../shared/engagementSetup';
 import { GridCol, GridHead, ROW_H, useGrid } from '../components/grid/Grid';
 import { PanelFooter, SidePanel } from '../components/SidePanel';
+import { useDismissOnClick } from '../hooks/useDismissOnClick';
 
 /**
  * Engagement Setup — ported from docs/design/Fusion Close.dc.html,
@@ -120,11 +122,8 @@ const LE_DATA: string[][] = [
 ];
 */
 
-/**
- * Engagement whose legal_entity_master rows the grid loads.
- * TODO: take this from the selected engagement once the app has one (no engagement context exists yet).
- */
-const ENGAGEMENT_ID = '00000000-0000-0000-0000-000000000001';
+/** Engagement whose legal_entity_master rows the grid loads (see src/api/engagement.ts). */
+const ENGAGEMENT_ID = ACTIVE_ENGAGEMENT_ID;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const showPct = (n: number | null, blankZero = false) => (n === null || (blankZero && n === 0) ? '—' : `${n}%`);
@@ -271,6 +270,7 @@ function StructureUpload({
   const [dropActive, setDropActive] = useState(false);
   const [parsed, setParsed] = useState<ParsedUpload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  useDismissOnClick(!!error, () => setError(null));
   const inputRef = useRef<HTMLInputElement>(null);
 
   const existingCodes = new Set(existing.map((r) => r[0]).filter(Boolean));
@@ -1175,6 +1175,7 @@ function LegalEntityMaster() {
   const [savingRow, setSavingRow] = useState<number | null>(null);
   /** confirmation (or error) shown above the table after a row Save */
   const [rowMsg, setRowMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useDismissOnClick(!!rowMsg, () => setRowMsg(null));
   useEffect(() => {
     if (!rowMsg?.ok) return;
     const t = window.setTimeout(() => setRowMsg(null), 6000);
@@ -1268,17 +1269,73 @@ function LegalEntityMaster() {
     g.setFilters({});
   };
 
-  const deleteSelected = () => {
-    setData((d) => d.filter((_, i) => !sel.includes(i)));
-    setBase((b) => b.filter((_, i) => !sel.includes(i)));
+  /** drop rows from the grid (and every index-aligned list) */
+  const removeRows = (gone: number[]) => {
+    const drop = new Set(gone);
+    setData((d) => d.filter((_, i) => !drop.has(i)));
+    setBase((b) => b.filter((_, i) => !drop.has(i)));
     // removing rows shifts every index above them, so remap rather than reset
-    setAdded((a) =>
-      a
-        .filter((idx) => !sel.includes(idx))
-        .map((idx) => idx - sel.filter((s) => s < idx).length),
-    );
-    setSel([]);
+    const shift = (idx: number) => idx - gone.filter((s) => s < idx).length;
+    setAdded((a) => a.filter((idx) => !drop.has(idx)).map(shift));
+    setSel((s) => s.filter((idx) => !drop.has(idx)).map(shift));
     setEdit(null);
+  };
+
+  /** Delete is a two-step button: the first click arms it, the second deletes */
+  const [deleteArmed, setDeleteArmed] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  useEffect(() => { setDeleteArmed(false); }, [sel]);
+
+  /**
+   * Delete the selected entities from legal_entity_master (DELETE /entities/:code). Rows never saved
+   * are only removed from the grid. Subsidiaries go before their parents, so a parent and its
+   * children can be deleted together; anything the server refuses stays in the grid with the reason.
+   */
+  const deleteSelected = async () => {
+    const picked = [...sel];
+    const saved = picked.filter((i) => base[i]);
+    const unsaved = picked.filter((i) => !base[i]);
+
+    const codeOf = (i: number) => blankCell(base[i]![0]);
+    const parentByCode = new Map(base.filter(Boolean).map((r) => [blankCell(r![0]), blankCell(r![2])]));
+    const depth = (code: string) => {
+      let d = 0;
+      for (let p = parentByCode.get(code), guard = 0; p && guard < 100; p = parentByCode.get(p), guard++) d++;
+      return d;
+    };
+    saved.sort((a, b) => depth(codeOf(b)) - depth(codeOf(a)));
+
+    setDeleting(true);
+    setRowMsg(null);
+    const deleted: string[] = [];
+    const failed: string[] = [];
+    const gone = [...unsaved];
+    for (const i of saved) {
+      const code = codeOf(i);
+      try {
+        await engagementSetupApi.deleteEntity(ENGAGEMENT_ID, code);
+        gone.push(i);
+        deleted.push(`${code} — ${blankCell(base[i]![1])}`);
+      } catch (e) {
+        // already gone from the database counts as deleted
+        if (e instanceof ApiError && e.status === 404) { gone.push(i); deleted.push(code); continue; }
+        failed.push(`${code}: ${e instanceof Error ? friendlyError(e.message) : 'could not be deleted'}`);
+      }
+    }
+    removeRows(gone);
+    setDeleting(false);
+    setDeleteArmed(false);
+
+    const n = deleted.length + unsaved.length;
+    const what = deleted.length ? `: ${deleted.join(', ')}` : '';
+    if (!failed.length) {
+      setRowMsg({ ok: true, text: `Deleted ${n} entit${n === 1 ? 'y' : 'ies'} from the Legal Entity Master${what}.` });
+    } else {
+      setRowMsg({
+        ok: false,
+        text: `${n ? `Deleted ${n} entit${n === 1 ? 'y' : 'ies'}${what}. ` : ''}Not deleted — ${failed.join('; ')}`,
+      });
+    }
   };
 
   const rows = useMemo(() => {
@@ -1293,6 +1350,12 @@ function LegalEntityMaster() {
   });
 
   const allChecked = g.rows.length > 0 && g.rows.every(({ i }) => sel.includes(i));
+  /** rows on screen with unsaved edits; the Action (Save) column is shown only while there are any */
+  const dirtyRows = useMemo(
+    () => new Set(g.rows.filter(({ r, i }) => rowChanged(r, base[i] ?? null)).map(({ i }) => i)),
+    [g.rows, base],
+  );
+  const showActions = dirtyRows.size > 0 || savingRow !== null;
 
 
   return (
@@ -1350,14 +1413,34 @@ function LegalEntityMaster() {
           </svg>
           Upload structure
         </button>
-        <button
-          type="button" className="fc-h fc-btn" disabled={!sel.length}
-          onClick={deleteSelected}
-          style={sel.length ? { ...CRUD_BASE, color: '#B42318' } : CRUD_OFF}
-          title={sel.length ? `Remove ${sel.length} selected entit${sel.length === 1 ? 'y' : 'ies'}` : 'Select rows to delete'}
-        >
-          🗑 Delete
-        </button>
+        {deleteArmed && sel.length ? (
+          <>
+            <button
+              type="button" className="fc-h fc-btn" disabled={deleting}
+              onClick={deleteSelected}
+              style={{ ...CRUD_BASE, color: '#fff', background: 'linear-gradient(145deg,#EF4444,#B42318)', boxShadow: '0 2px 8px rgba(180,35,24,.35)' }}
+              title="Permanently delete the selected entities from the database"
+            >
+              {deleting ? 'Deleting…' : `Confirm delete (${sel.length})`}
+            </button>
+            <button
+              type="button" className="fc-h fc-btn" disabled={deleting}
+              onClick={() => setDeleteArmed(false)}
+              style={{ ...CRUD_BASE, color: '#65708C' }}
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            type="button" className="fc-h fc-btn" disabled={!sel.length}
+            onClick={() => setDeleteArmed(true)}
+            style={sel.length ? { ...CRUD_BASE, color: '#B42318' } : CRUD_OFF}
+            title={sel.length ? `Delete ${sel.length} selected entit${sel.length === 1 ? 'y' : 'ies'} from the database` : 'Select rows to delete'}
+          >
+            🗑 Delete
+          </button>
+        )}
         <button
           type="button" className="fc-h fc-btn" onClick={() => setOrgOpen(true)}
           style={{ ...CRUD_BASE, color: '#4055C8' }}
@@ -1431,7 +1514,7 @@ function LegalEntityMaster() {
                   style={{ width: '15px', height: '15px', cursor: 'pointer', accentColor: '#3B5BDB' }}
                 />
               )}
-              trail={<span style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '.45px' }}>ACTION</span>}
+              trail={showActions ? <span style={{ fontSize: '9.5px', fontWeight: 700, letterSpacing: '.45px' }}>ACTION</span> : undefined}
               trailWidth={LE_SAVE_W}
             />
           </thead>
@@ -1523,8 +1606,8 @@ function LegalEntityMaster() {
                       </td>
                     );
                   })}
-                  {/* Save — appears only once the row differs from what is in the database */}
-                  <td
+                  {/* Save — the column exists only while some row has edits; the button only on edited rows */}
+                  {showActions && <td
                     style={{
                       width: `${LE_SAVE_W}px`, minWidth: `${LE_SAVE_W}px`, maxWidth: `${LE_SAVE_W}px`, height: `${ROW_H}px`,
                       boxSizing: 'border-box', padding: '0 6px', textAlign: 'center', verticalAlign: 'middle',
@@ -1532,7 +1615,7 @@ function LegalEntityMaster() {
                       boxShadow: '-6px 0 10px -8px rgba(60,70,100,.45)',
                     }}
                   >
-                    {rowChanged(r, base[i] ?? null) && (
+                    {(dirtyRows.has(i) || savingRow === i) && (
                       <button
                         type="button" className="fc-h fc-btn"
                         disabled={savingRow !== null}
@@ -1551,7 +1634,7 @@ function LegalEntityMaster() {
                         {savingRow === i ? 'Saving…' : 'Save'}
                       </button>
                     )}
-                  </td>
+                  </td>}
                 </tr>
               );
             })}
@@ -2062,6 +2145,7 @@ function EngagementConfiguration() {
   const [fresh, setFresh] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useDismissOnClick(!!saveMsg, () => setSaveMsg(null));
   const savedRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const ctrl = new AbortController();

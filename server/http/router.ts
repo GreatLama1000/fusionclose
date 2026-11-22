@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AppError, badRequest, notFound } from '../errors';
+import { CommandCenterService } from '../services/commandCenterService';
 import { EngagementConfigService } from '../services/engagementConfigService';
 import { LegalEntityService } from '../services/legalEntityService';
 
@@ -11,6 +12,7 @@ import { LegalEntityService } from '../services/legalEntityService';
 
 const entities = new LegalEntityService();
 const configs = new EngagementConfigService();
+const commandCenter = new CommandCenterService();
 
 const MAX_BODY = 5 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -41,13 +43,16 @@ function send(res: ServerResponse, status: number, body?: unknown) {
 
 async function route(req: IncomingMessage, res: ServerResponse) {
   const url = new URL(req.url ?? '/', 'http://localhost');
-  const m = /^\/api\/v1\/engagements\/([^/]+)\/(entities|configs)(?:\/([^/]+))?$/.exec(url.pathname);
+  const m = /^\/api\/v1\/engagements\/([^/]+)\/(entities|configs|summary)(?:\/([^/]+))?$/.exec(url.pathname);
   if (!m) throw notFound('No such route');
   const [, engagementId, resource, rawCode] = m;
   if (!UUID.test(engagementId)) throw badRequest('Engagement id must be a UUID');
   const code = rawCode ? decodeURIComponent(rawCode) : undefined;
   const method = req.method ?? 'GET';
 
+  if (resource === 'summary' && !code && method === 'GET') {
+    return send(res, 200, await commandCenter.setupSummary(engagementId));
+  }
   if (resource === 'configs' && !code) {
     if (method === 'GET') return send(res, 200, await configs.list(engagementId));
     if (method === 'PUT') return send(res, 200, await configs.save(engagementId, await readJson(req)));

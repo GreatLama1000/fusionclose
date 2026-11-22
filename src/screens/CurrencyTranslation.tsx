@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Clip, GridCol, GridHead, GrowText, useGrid } from '../components/grid/Grid';
+import { useDismissOnClick } from '../hooks/useDismissOnClick';
 
 /**
  * Currency Translation — ported from docs/design/Fusion Close.dc.html,
@@ -123,6 +124,7 @@ export default function CurrencyTranslation() {
   const [full, setFull] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; key: string; label: string } | null>(null);
   const [toast, setToast] = useState('');
+  useDismissOnClick(!!toast, () => setToast(''));
   const [cal, setCal] = useState<{ id: string; month: string } | null>(null);
 
   const say = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3200); };

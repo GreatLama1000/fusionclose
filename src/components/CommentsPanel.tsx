@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RouteKey, routes } from '../routes';
 
 /**
@@ -125,6 +125,30 @@ export default function CommentsPanel({
   const [focus, setFocus] = useState<string | null>(null);
   const [replyOn, setReplyOn] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
+  const railRef = useRef<HTMLElement>(null);
+
+  // Close on a left-click outside the rail, or Escape. Left alone: the rail itself, the top-bar
+  // Comments button (it toggles the rail on its own) and the right-click comment menu / composer
+  // (CommentMenu), which opens and refills the rail. Right-clicks are ignored so a new comment
+  // can be started on the page while the rail stays open.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const t = e.target as Element | null;
+      if (!t || railRef.current?.contains(t)) return;
+      if (t.closest?.('[data-comments-toggle], [data-comment-ui]')) return;
+      closeRef.current();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current(); };
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
 
   const mine = openForMe(comments);
   const list =
@@ -166,6 +190,7 @@ export default function CommentsPanel({
 
   return (
     <aside
+      ref={railRef}
       style={{
         position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 1300,
         width: '372px', maxWidth: '92vw',

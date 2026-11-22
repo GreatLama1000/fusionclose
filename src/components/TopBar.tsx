@@ -88,6 +88,28 @@ export default function TopBar() {
   const close = () => setOpenMenu(null);
   const toggle = (m: typeof openMenu) => setOpenMenu((c) => (c === m ? null : m));
 
+  // Close the open menu on a press anywhere outside it (or Escape). A document listener is used
+  // rather than a full-screen overlay: the header's backdrop-filter makes `position: fixed`
+  // children cover only the header strip, so an overlay never sees clicks on the page below.
+  useEffect(() => {
+    if (!openMenu) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      // inside a menu wrapper (its trigger or its panel) the wrapper's own handlers decide
+      if (t?.closest?.(`[data-topbar-menu="${openMenu}"]`)) return;
+      // pressing another menu's trigger switches menus through its own toggle
+      if (t?.closest?.('[data-topbar-menu]')) return;
+      setOpenMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenMenu(null); };
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openMenu]);
+
   return (
     <>
       <header
@@ -163,7 +185,7 @@ export default function TopBar() {
         </div>
 
         {/* Bell */}
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} data-topbar-menu="bell">
           <IconButton onClick={() => toggle('bell')} label="Notifications">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#414B62" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -185,7 +207,8 @@ export default function TopBar() {
           {openMenu === 'bell' && <BellPanel onClose={close} onNavigate={navTo} />}
         </div>
 
-        {/* Comments */}
+        {/* Comments — the rail closes itself on an outside click; this wrapper marks the toggle */}
+        <span data-comments-toggle style={{ display: 'contents' }}>
         <IconButton
           label="Comments"
           title="Comments — right-click anything (text, table cell, figure) to add one"
@@ -209,9 +232,10 @@ export default function TopBar() {
             </span>
           )}
         </IconButton>
+        </span>
 
         {/* Presence */}
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} data-topbar-menu="presence">
           <button
             onClick={() => toggle('presence')}
             className="fc-h fc-btn"
@@ -247,7 +271,7 @@ export default function TopBar() {
             </span>
           </button>
           {openMenu === 'presence' && (
-            <Popover onClose={close} width="w-[308px]">
+            <Popover width="w-[308px]">
               <div className="flex items-center gap-2 mb-2">
                 <span className="flex-1 text-[12.5px] font-bold text-ink-900">Active in this engagement</span>
                 <span className="text-[10px] font-bold text-good bg-good/10 px-2 py-0.5 rounded">
@@ -279,7 +303,7 @@ export default function TopBar() {
         </div>
 
         {/* Account */}
-        <div className="relative">
+        <div className="relative" data-topbar-menu="account">
           <button
             onClick={() => toggle('account')}
             className="flex items-center gap-2 h-[38px] pl-1 pr-3.5 rounded-full bg-white/60 border border-surface-line shadow-neu-in-sm"
@@ -298,7 +322,7 @@ export default function TopBar() {
             <Icon path="M6 9l6 6 6-6" size={11} strokeWidth={2.4} className="text-ink-400" />
           </button>
           {openMenu === 'account' && (
-            <Popover onClose={close} width="w-[274px]">
+            <Popover width="w-[274px]">
               <div className="pb-2 border-b border-surface-line/60 text-[10.5px] font-bold tracking-[1.2px] uppercase text-ink-400">
                 Signed in as
               </div>
@@ -512,7 +536,6 @@ function BellPanel({ onClose, onNavigate }: { onClose: () => void; onNavigate: (
 
   return (
     <>
-      <div style={{ position: 'fixed', inset: 0, zIndex: 25 }} onClick={onClose} />
       <div
         style={{
           position: 'absolute',
@@ -661,14 +684,14 @@ function BellPanel({ onClose, onNavigate }: { onClose: () => void; onNavigate: (
   );
 }
 
-function Popover({ children, onClose, width }: { children: React.ReactNode; onClose: () => void; width: string }) {
+/** dropdown panel under a top-bar button; an outside press closes it (TopBar's document listener) */
+function Popover({ children, width }: { children: React.ReactNode; width: string }) {
   return (
-    <>
-      <div className="fixed inset-0 z-30" onClick={onClose} />
-      <div className={`absolute right-0 top-[46px] z-40 ${width} p-3 rounded-2xl bg-surface-card shadow-neu border border-surface-line/60 animate-fcFade`}>
-        {children}
-      </div>
-    </>
+    <div
+      className={`absolute right-0 top-[46px] z-40 ${width} p-3 rounded-2xl bg-surface-card shadow-neu border border-surface-line/60 animate-fcFade`}
+    >
+      {children}
+    </div>
   );
 }
 

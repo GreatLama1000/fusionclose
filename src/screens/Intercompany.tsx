@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Clip, GridCol, GridHead, useGrid } from '../components/grid/Grid';
+import { useDismissOnClick } from '../hooks/useDismissOnClick';
 
 /**
  * Intercompany Eliminations (ICE) — ported from docs/design/Fusion Close.dc.html,
@@ -140,6 +141,7 @@ export default function Intercompany() {
   const [full, setFull] = useState(false);
   const [dashOpen, setDashOpen] = useState(false);
   const [toast, setToast] = useState('');
+  useDismissOnClick(!!toast, () => setToast(''));
 
   const tolValue = Number(tol) || 0;
   const [code, name, sub, state] = NATURE[tab];
