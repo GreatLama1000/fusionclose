@@ -200,12 +200,19 @@ const TH: React.CSSProperties = {
  * The header row. `lead` is an optional leading cell (select-all checkbox);
  * it is not a column and is never moved.
  */
-export function GridHead({ g, lead, leadStyle }: { g: Grid; lead?: React.ReactNode; leadStyle?: React.CSSProperties }) {
+export function GridHead({ g, lead, leadStyle, trail, trailWidth = 0 }: {
+  g: Grid; lead?: React.ReactNode; leadStyle?: React.CSSProperties;
+  /** optional trailing cell after the last column (row actions); stays pinned to the right edge. Give its `trailWidth`. */
+  trail?: React.ReactNode; trailWidth?: number;
+}) {
   return (
     <>
       <tr>
         {g.lead > 0 && <th style={{ ...TH, padding: 0, textAlign: 'center', ...g.widthCss(g.lead), ...g.leadHeadStick(), ...leadStyle }}>{lead}</th>}
         {g.cols.map((c) => <HeadCell key={c.key} g={g} c={c} />)}
+        {trail !== undefined && (
+          <th style={{ ...TH, padding: 0, textAlign: 'center', ...g.widthCss(trailWidth), right: 0, zIndex: 7, boxShadow: '-6px 0 10px -8px rgba(60,70,100,.45)' }}>{trail}</th>
+        )}
       </tr>
       {g.menu && <ColMenu g={g} />}
     </>

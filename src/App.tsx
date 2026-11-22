@@ -4,6 +4,7 @@ import TopBar from './components/TopBar';
 import CommentMenu from './components/CommentMenu';
 import Stepper from './components/Stepper';
 import Home from './screens/Home';
+import Login from './screens/Login';
 import CommandCenter from './screens/CommandCenter';
 import Placeholder from './screens/Placeholder';
 import EngagementSetup from './screens/EngagementSetup';
@@ -39,8 +40,17 @@ const SCREENS: Partial<Record<RouteKey, React.ComponentType>> = {
 };
 
 export default function App() {
-  const { route, dark } = useApp();
+  const { route, dark, isAuthed } = useApp();
   const Screen = SCREENS[route] ?? Placeholder;
+
+  // nothing but the sign-in screen until the user is signed in
+  if (!isAuthed) {
+    return (
+      <div className={`${dark ? 'fc-dark' : ''} min-h-screen flex bg-surface-bg text-ink-800`}>
+        <Login />
+      </div>
+    );
+  }
 
   return (
     <div className={`${dark ? 'fc-dark' : ''} min-h-screen flex bg-surface-bg text-ink-800`}>

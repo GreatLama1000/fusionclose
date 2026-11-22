@@ -18,6 +18,21 @@ export const seedUsers: User[] = [
   { email: 'lena@fusionclose.io',  name: 'Lena T.',      initials: 'LT', role: 'Viewer',          color: '#DB2777' },
 ];
 
+/**
+ * Hardcoded sign-in for now (no auth backend yet). Replace `login` below with a real call later.
+ * The signed-in user is shown in the top bar.
+ */
+const DEMO_LOGIN = { username: 'admin', password: 'admin123' };
+
+export const ADMIN_USER: User = {
+  email: 'admin', name: 'admin', initials: 'AD', role: 'Super User', color: '#2563EB',
+};
+
+const AUTH_KEY = 'fc_auth';
+const readAuth = () => {
+  try { return sessionStorage.getItem(AUTH_KEY) === '1'; } catch { return false; }
+};
+
 type ModuleKey = 'buscomb' | 'gaap' | 'proforma' | 'carve';
 
 /** A closed period opened read-only from My Workspace (design: `wsArchive`). */
@@ -43,10 +58,11 @@ type Ctx = {
   toggleWsFav: (id: string) => void;
   wsArchive: WsArchive;
   setWsArchive: (a: WsArchive) => void;
-  loginUser: string;
-  setLoginUser: (v: string) => void;
-  loginPass: string;
-  setLoginPass: (v: string) => void;
+  /** true once the user has signed in; the app shows the Login screen until then */
+  isAuthed: boolean;
+  /** checks the hardcoded credentials; on success signs in and lands on Home. Returns false on a mismatch. */
+  login: (username: string, password: string) => boolean;
+  logout: () => void;
   users: User[];
   currentUser: User;
   setCurrentUserEmail: (email: string) => void;
@@ -96,14 +112,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }
   const [wsFav, setWsFav] = useState<Record<string, boolean>>({});
   const [wsArchive, setWsArchive] = useState<WsArchive>(null);
-  const [loginUser, setLoginUser] = useState('amara@fusionclose.io');
-  const [loginPass, setLoginPass] = useState('');
-  const [currentUserEmail, setCurrentUserEmail] = useState(seedUsers[0].email);
+  const [isAuthed, setIsAuthed] = useState(readAuth);
+  const [currentUserEmail, setCurrentUserEmail] = useState(() => (readAuth() ? ADMIN_USER.email : seedUsers[0].email));
 
   const currentUser = useMemo(
-    () => seedUsers.find((u) => u.email === currentUserEmail) ?? seedUsers[0],
+    () => [ADMIN_USER, ...seedUsers].find((u) => u.email === currentUserEmail) ?? seedUsers[0],
     [currentUserEmail],
   );
+
+  const login = useCallback((username: string, password: string) => {
+    if (username.trim() !== DEMO_LOGIN.username || password !== DEMO_LOGIN.password) return false;
+    try { sessionStorage.setItem(AUTH_KEY, '1'); } catch { /* blocked storage */ }
+    setCurrentUserEmail(ADMIN_USER.email);
+    setNav({ route: 'home', stack: [] });
+    setIsAuthed(true);
+    return true;
+  }, []);
+
+  const logout = useCallback(() => {
+    try { sessionStorage.removeItem(AUTH_KEY); } catch { /* blocked storage */ }
+    setIsAuthed(false);
+    setCurrentUserEmail(seedUsers[0].email);
+    setNav({ route: 'home', stack: [] });
+  }, []);
 
   const [comments, setComments] = useState<Comment[]>(COMMENT_SEED);
   const [railOpen, setRailOpen] = useState(false);
@@ -171,8 +202,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }, []),
     wsArchive,
     setWsArchive,
-    loginUser, setLoginUser,
-    loginPass, setLoginPass,
+    isAuthed, login, logout,
     users: seedUsers,
     currentUser,
     setCurrentUserEmail,

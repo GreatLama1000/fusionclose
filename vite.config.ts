@@ -5,4 +5,6 @@ export default defineConfig({
   // Classic runtime so JSX compiles to React.createElement, which the dark
   // theme patches to remap inline-style colours (src/theme/dark.ts).
   plugins: [react({ jsxRuntime: 'classic' })],
+  // Engagement Setup API (server/) — start with `npm run server`
+  server: { proxy: { '/api': 'http://localhost:3001' } },
 });

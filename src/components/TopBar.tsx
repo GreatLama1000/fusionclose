@@ -41,12 +41,14 @@ const CRUMB_LINK: React.CSSProperties = {
 };
 
 export default function TopBar() {
-  const { route, navStack, navTo, navToStack, users, currentUser, setCurrentUserEmail, comments, setComments, railOpen, setRailOpen } = useApp();
+  const { route, navStack, navTo, navToStack, currentUser, logout, comments, setComments, railOpen, setRailOpen } = useApp();
   const [openMenu, setOpenMenu] = useState<'bell' | 'presence' | 'account' | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const crumbRef = useRef<HTMLElement>(null);
 
   const cmtMine = openForMe(comments);
+  // Only the signed-in account is shown in the top bar — no hardcoded demo roster.
+  const online = [currentUser];
 
   // chain = [...navStack, route], 'home' forced first, de-duped keeping the
   // LAST occurrence of each route (design logic, lines 10485–10490).
@@ -228,7 +230,7 @@ export default function TopBar() {
             title="Who is in this engagement right now"
           >
             <span className="flex items-center -space-x-1.5">
-              {users.slice(0, 4).map((u) => (
+              {online.map((u) => (
                 <span
                   key={u.email}
                   className="w-7 h-7 rounded-full ring-2 ring-surface-card grid place-items-center text-[10px] font-bold text-white"
@@ -241,7 +243,7 @@ export default function TopBar() {
             </span>
             <span className="flex items-center gap-1.5 text-[11px] font-bold text-ink-700">
               <span className="w-1.5 h-1.5 rounded-full bg-good ring-2 ring-good/20" />
-              {users.length}
+              {online.length}
             </span>
           </button>
           {openMenu === 'presence' && (
@@ -249,11 +251,11 @@ export default function TopBar() {
               <div className="flex items-center gap-2 mb-2">
                 <span className="flex-1 text-[12.5px] font-bold text-ink-900">Active in this engagement</span>
                 <span className="text-[10px] font-bold text-good bg-good/10 px-2 py-0.5 rounded">
-                  {users.length} online
+                  {online.length} online
                 </span>
               </div>
               <ul className="space-y-1">
-                {users.map((u) => (
+                {online.map((u) => (
                   <li key={u.email} className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-brand-500/8">
                     <span
                       className="w-7 h-7 rounded-full grid place-items-center text-[10px] font-bold text-white"
@@ -281,7 +283,7 @@ export default function TopBar() {
           <button
             onClick={() => toggle('account')}
             className="flex items-center gap-2 h-[38px] pl-1 pr-3.5 rounded-full bg-white/60 border border-surface-line shadow-neu-in-sm"
-            title="Switch signed-in user"
+            title="Account"
           >
             <span
               className="w-8 h-8 rounded-full grid place-items-center text-[10.5px] font-bold text-white"
@@ -300,36 +302,31 @@ export default function TopBar() {
               <div className="pb-2 border-b border-surface-line/60 text-[10.5px] font-bold tracking-[1.2px] uppercase text-ink-400">
                 Signed in as
               </div>
-              <ul className="pt-2 space-y-0.5">
-                {users.map((u) => (
-                  <li key={u.email}>
-                    <button
-                      onClick={() => { setCurrentUserEmail(u.email); close(); }}
-                      className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-brand-500/8"
-                    >
-                      <span
-                        className="w-7 h-7 rounded-full grid place-items-center text-[10.5px] font-bold text-white"
-                        style={{ backgroundColor: u.color }}
-                      >
-                        {u.initials}
-                      </span>
-                      <span className="flex-1 text-left">
-                        <span className="block text-[12.5px] font-bold text-ink-900">{u.name}</span>
-                        <span className="block text-[10.5px] italic text-ink-400">{u.role}</span>
-                      </span>
-                      <span className="w-3 text-[11px] font-bold text-brand-accent">
-                        {u.email === currentUser.email ? '✓' : ''}
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="pt-2 flex items-center gap-2.5 p-2">
+                <span
+                  className="w-7 h-7 rounded-full grid place-items-center text-[10.5px] font-bold text-white"
+                  style={{ backgroundColor: currentUser.color }}
+                >
+                  {currentUser.initials}
+                </span>
+                <span className="flex-1 text-left">
+                  <span className="block text-[12.5px] font-bold text-ink-900">{currentUser.name}</span>
+                  <span className="block text-[10.5px] italic text-ink-400">{currentUser.role}</span>
+                </span>
+              </div>
               <button
                 onClick={() => { navTo('intake'); close(); }}
                 className="mt-2 pt-2.5 w-full flex items-center gap-2 border-t border-surface-line/60 text-[11.5px] font-bold text-brand-accent"
               >
                 <Icon path="M12 5v14M5 12h14" size={12} strokeWidth={2.6} />
                 New Project
+              </button>
+              <button
+                onClick={() => { close(); logout(); }}
+                className="mt-1 pt-2.5 w-full flex items-center gap-2 border-t border-surface-line/60 text-[11.5px] font-bold text-danger"
+              >
+                <Icon path="M14 7V4H5v16h9v-3M10 12h11M18 9l3 3-3 3" size={12} strokeWidth={2.2} />
+                Sign out
               </button>
             </Popover>
           )}

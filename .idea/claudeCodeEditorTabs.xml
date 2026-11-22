@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ClaudeCodeEditorTabs">
+    <option name="activeSessionId" value="0d485be7-916f-4089-844f-53dea7d144cc" />
+    <option name="openSessionIds">
+      <list>
+        <option value="84e6437c-49e2-4239-b5db-d54644fbf82e" />
+        <option value="38290f83-278c-4191-ab7a-c24dbedb121d" />
+        <option value="eae19ade-1402-4447-a6dd-2b8dfa310e6b" />
+        <option value="6df3e10c-496c-4217-a98a-d2b204d6eafa" />
+        <option value="0d485be7-916f-4089-844f-53dea7d144cc" />
+      </list>
+    </option>
+    <option name="sessionPaths">
+      <map>
+        <entry key="0d485be7-916f-4089-844f-53dea7d144cc" value="/sessions/a5e6653c-02ba-4edd-8cb4-4188ab5bc6f7" />
+        <entry key="38290f83-278c-4191-ab7a-c24dbedb121d" value="/sessions/a5e6653c-02ba-4edd-8cb4-4188ab5bc6f7" />
+        <entry key="6df3e10c-496c-4217-a98a-d2b204d6eafa" value="/sessions/a5e6653c-02ba-4edd-8cb4-4188ab5bc6f7" />
+        <entry key="84e6437c-49e2-4239-b5db-d54644fbf82e" value="/sessions/1f720a8e-a119-4f76-a786-938a60c424d0" />
+        <entry key="eae19ade-1402-4447-a6dd-2b8dfa310e6b" value="/sessions/a5e6653c-02ba-4edd-8cb4-4188ab5bc6f7" />
+      </map>
+    </option>
+    <option name="sessionTitles">
+      <map>
+        <entry key="0d485be7-916f-4089-844f-53dea7d144cc" value="PostgreSQL database connection details" />
+        <entry key="38290f83-278c-4191-ab7a-c24dbedb121d" value="PostgreSQL database connection details" />
+        <entry key="6df3e10c-496c-4217-a98a-d2b204d6eafa" value="PostgreSQL database connection details" />
+        <entry key="84e6437c-49e2-4239-b5db-d54644fbf82e" value="EngagementSetup data and service layer" />
+        <entry key="eae19ade-1402-4447-a6dd-2b8dfa310e6b" value="PostgreSQL database connection details" />
+      </map>
+    </option>
+  </component>
+</project>
